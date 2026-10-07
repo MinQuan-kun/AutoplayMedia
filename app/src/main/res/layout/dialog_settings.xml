@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/dark_card">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Cấu hình Kết nối &amp; Trình chiếu"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <!-- MÃ THIẾT BỊ DUY NHẤT (DEVICE ID) -->
+        <TextView
+            android:id="@+id/tvDeviceIdHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#1B2430"
+            android:padding="10dp"
+            android:text="Mã thiết bị: Đang tải..."
+            android:textColor="@color/accent_teal"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+        <!-- LỰA CHỌN PHƯƠNG THỨC KẾT NỐI -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CHỌN PHƯƠNG THỨC HOẠT ĐỘNG:"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <RadioGroup
+            android:id="@+id/rgSyncMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <RadioButton
+                android:id="@+id/rbModeMqtt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="1. Server MQTT riêng (Đổi video tức thì dưới 1s)"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                android:buttonTint="@color/accent_blue"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/rbModeHttp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="2. Server Web REST API (Định kỳ tự kéo link từ Server)"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                android:buttonTint="@color/accent_blue" />
+
+            <RadioButton
+                android:id="@+id/rbModeDirect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="3. Thủ công (Dán 1 link video cố định)"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                android:buttonTint="@color/accent_blue" />
+        </RadioGroup>
+
+        <!-- ================================================================= -->
+        <!-- KHUNG 1: CẤU HÌNH SERVER MQTT -->
+        <!-- ================================================================= -->
+        <LinearLayout
+            android:id="@+id/layoutMqttConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#161B22"
+            android:padding="14dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cấu hình Server MQTT"
+                android:textColor="@color/accent_teal"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Địa chỉ MQTT Broker (tcp://IP:Port hoặc Domain):"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/etMqttBroker"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="#252525"
+                android:padding="10dp"
+                android:hint="tcp://broker.hivemq.com:1883"
+                android:textColor="@color/white"
+                android:textColorHint="#777777"
+                android:textSize="13sp"
+                android:inputType="textUri"
+                android:layout_marginBottom="10dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="10dp">
+
+                <EditText
+                    android:id="@+id/etMqttUser"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="6dp"
+                    android:background="#252525"
+                    android:padding="10dp"
+                    android:hint="Username (Tùy chọn)"
+                    android:textColor="@color/white"
+                    android:textColorHint="#777777"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/etMqttPass"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:background="#252525"
+                    android:padding="10dp"
+                    android:hint="Password (Tùy chọn)"
+                    android:textColor="@color/white"
+                    android:textColorHint="#777777"
+                    android:textSize="13sp"
+                    android:inputType="textPassword" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Kênh lắng nghe lệnh (Topic chung):"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/etMqttTopic"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="#252525"
+                android:padding="10dp"
+                android:hint="signage/all/video"
+                android:textColor="@color/white"
+                android:textColorHint="#777777"
+                android:textSize="13sp"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:id="@+id/tvMqttStatusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Trạng thái: Đang kết nối..."
+                android:textColor="#FFA726"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- ================================================================= -->
+        <!-- KHUNG 2: CẤU HÌNH SERVER REST API -->
+        <!-- ================================================================= -->
+        <LinearLayout
+            android:id="@+id/layoutHttpConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#161B22"
+            android:padding="14dp"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cấu hình Server Web REST API"
+                android:textColor="@color/accent_teal"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Đường dẫn API (GET):"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/etRestApiUrl"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="#252525"
+                android:padding="10dp"
+                android:hint="https://api.example.com/device/video"
+                android:textColor="@color/white"
+                android:textColorHint="#777777"
+                android:textSize="13sp"
+                android:inputType="textUri"
+                android:layout_marginBottom="10dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Chu kỳ tự hỏi Server (Phút):"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/etApiInterval"
+                    android:layout_width="80dp"
+                    android:layout_height="44dp"
+                    android:background="#252525"
+                    android:padding="8dp"
+                    android:text="30"
+                    android:textAlignment="center"
+                    android:textColor="@color/white"
+                    android:textSize="13sp"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvRestApiStatusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Trạng thái: Chưa kiểm tra"
+                android:textColor="#FFA726"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- ================================================================= -->
+        <!-- KHUNG 3: CẤU HÌNH THỦ CÔNG -->
+        <!-- ================================================================= -->
+        <LinearLayout
+            android:id="@+id/layoutDirectConfig"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#161B22"
+            android:padding="14dp"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nhập link video trực tiếp (Google Drive / MP4):"
+                android:textColor="@color/white"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <EditText
+                android:id="@+id/etDirectVideoUrl"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:background="#252525"
+                android:padding="12dp"
+                android:hint="Dán link Google Drive hoặc file MP4..."
+                android:textColor="@color/white"
+                android:textColorHint="#777777"
+                android:textSize="13sp"
+                android:inputType="textUri" />
+        </LinearLayout>
+
+        <!-- Xóa bộ nhớ đệm (Clear cache) -->
+        <Button
+            android:id="@+id/btnClearCache"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_clear_cache"
+            android:textColor="#FF5252"
+            app:strokeColor="#FF5252"
+            android:layout_marginBottom="16dp"
+            android:focusable="true" />
+
+        <!-- Nút hành động -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnCloseDialog"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:text="@string/btn_close"
+                android:textColor="@color/text_secondary"
+                android:focusable="true" />
+
+            <Button
+                android:id="@+id/btnSaveAndPlay"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="2"
+                android:text="Lưu &amp; Áp Dụng Cấu Hình"
+                android:backgroundTint="@color/accent_blue"
+                android:textColor="@color/white"
+                android:textStyle="bold"
+                android:focusable="true" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

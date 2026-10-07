@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Smart Signage</string>
+    <string name="settings_title">Cấu hình Trình chiếu</string>
+    <string name="hint_input_url">Nhập URL video (.mp4, .mkv, Google Drive,...)</string>
+    <string name="label_url">URL Video</string>
+    <string name="btn_save_and_play">Lưu &amp; Bắt đầu Chiếu</string>
+    <string name="btn_clear_cache">Xoá bộ nhớ đệm (Clear Cache)</string>
+    <string name="btn_close">Đóng</string>
+    <string name="settings_btn">Cài đặt</string>
+    <string name="status_downloading">Đang tải video...</string>
+    <string name="error_invalid_url">Vui lòng nhập URL hợp lệ</string>
+    <string name="error_download_failed">Lỗi khi tải dữ liệu. Đang thử lại...</string>
+    <string name="cache_cleared">Đã xoá sạch bộ nhớ đệm</string>
+</resources>

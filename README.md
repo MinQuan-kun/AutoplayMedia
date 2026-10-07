@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/Architecture-Clean_IoT_Signage-007ACC?style=for-the-badge" alt="Architecture" />
 </p>
 
-Ứng dụng **Trình chiếu Video Tự động 24/7 (Digital Signage & Kiosk)** được xây dựng bằng **Kotlin & Android Studio**. Ứng dụng hỗ trợ chạy đa nền tảng: **Điện thoại**, **Smart TV / Android TV Box**, **Màn hình máy tính**, và đặc biệt tối ưu để tích hợp vào **bo mạch màn hình máy lọc nước thông minh** hoặc các thiết bị nhúng IoT (Rockchip, Allwinner, Raspberry Pi chạy Android).
+Ứng dụng **Trình chiếu Video Tự động 24/7 (Digital Signage & Kiosk)** được xây dựng bằng **Kotlin & Android Studio**. Ứng dụng hỗ trợ chạy đa nền tảng: **Điện thoại**, **Smart TV / Android TV Box**, **Màn hình máy tính**, và đặc biệt tối ưu để tích hợp vào **bo mạch màn hình máy** hoặc các thiết bị nhúng IoT (Rockchip, Allwinner, Raspberry Pi chạy Android).
 
 ---
 
@@ -163,8 +163,3 @@ Server chỉ cần trả về JSON khi thiết bị gọi tới:
 }
 ```
 
----
-
-## 📄 LICENSE
-
-Dự án được phát hành theo giấy phép [MIT License](LICENSE). Tự do sử dụng, chỉnh sửa và tích hợp vào các sản phẩm thương mại (máy lọc nước, màn hình quảng cáo, kiosk).

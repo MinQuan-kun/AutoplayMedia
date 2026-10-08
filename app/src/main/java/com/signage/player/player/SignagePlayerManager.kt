@@ -3,20 +3,20 @@ package com.signage.player.player
 import android.media.MediaPlayer
 import android.net.Uri
 import android.view.View
-import android.widget.VideoView
+import com.signage.player.ui.ScalableVideoView
 import java.io.File
 
 /**
  * ==============================================================================
- * TRÌNH ĐIỀU KHIỂN PHÁT VIDEO NATIVE (TƯƠNG THÍCH MỌI PHIÊN BẢN ANDROID 4.3 - 15)
+ * TRÌNH ĐIỀU KHIỂN PHÁT VIDEO NATIVE & TỰ ĐỘNG CO GIÃN TỶ LỆ THEO MÀN HÌNH
  * ==============================================================================
- * - Sử dụng android.widget.VideoView & MediaPlayer tích hợp sẵn trong hệ thống Android.
- * - Giải mã phần cứng trực tiếp (Hardware Acceleration VPU), cực nhẹ, không tốn RAM.
- * - Tự động lặp lại vô tận 24/7 (Continuous Loop) không gián đoạn.
- * - Không phụ thuộc thư viện Google Media3 nặng nề, hoàn toàn không bị lỗi văng trên TV cũ.
+ * - Hỗ trợ mọi phiên bản Android từ 4.3 (Jelly Bean) đến Android 15.
+ * - Giải mã phần cứng VPU trực tiếp, cực nhẹ, không ngốn RAM.
+ * - Tự động lặp lại liên tục 24/7.
+ * - Tự động điều chỉnh kích thước hiển thị theo tỷ lệ màn hình (Fit, Fill, Stretch).
  */
 class SignagePlayerManager(
-    private val videoView: VideoView,
+    private val videoView: ScalableVideoView,
     private val onError: (String) -> Unit
 ) {
 
@@ -31,6 +31,14 @@ class SignagePlayerManager(
         videoView.setOnPreparedListener { mp ->
             mediaPlayer = mp
             mp.isLooping = true // Lặp vô tận 24/7
+
+            // Cập nhật độ phân giải gốc của video cho ScalableVideoView tính toán tỷ lệ
+            val w = mp.videoWidth
+            val h = mp.videoHeight
+            if (w > 0 && h > 0) {
+                videoView.setVideoSize(w, h)
+            }
+
             videoView.start()
         }
 
@@ -49,6 +57,13 @@ class SignagePlayerManager(
             onError(msg)
             true // Đã bắt lỗi, ngăn Android hiện popup lỗi crash khó chịu
         }
+    }
+
+    /**
+     * Cập nhật chế độ tỷ lệ hiển thị video (FIT, FILL, STRETCH).
+     */
+    fun setScaleMode(mode: String) {
+        videoView.scaleMode = mode
     }
 
     /**

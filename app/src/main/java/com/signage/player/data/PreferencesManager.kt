@@ -39,6 +39,12 @@ class PreferencesManager(private val context: Context) {
         private const val KEY_MQTT_DEVICE_ID = "key_mqtt_device_id"
         private const val KEY_MQTT_TOPIC = "key_mqtt_topic"
 
+        // Cấu hình tỷ lệ hiển thị video (Thích ứng theo màn hình)
+        private const val KEY_VIDEO_SCALE_MODE = "key_video_scale_mode"
+        const val SCALE_FIT = "FIT"         // Vừa vặn (Giữ nguyên tỉ lệ, không mất góc)
+        const val SCALE_FILL = "FILL"       // Tràn viền (Lấp đầy 100%, không viền đen)
+        const val SCALE_STRETCH = "STRETCH" // Kéo dãn (Lấp đầy toàn bộ màn hình)
+
         // Cấu hình HTTP REST API Server
         private const val KEY_SERVER_API_URL = "key_server_api_url"
         private const val KEY_API_SYNC_INTERVAL = "key_api_sync_interval"
@@ -71,6 +77,13 @@ class PreferencesManager(private val context: Context) {
     var lastCachedFilePath: String?
         get() = prefs.getString(KEY_LAST_CACHED_FILE, null)
         set(value) = prefs.edit().putString(KEY_LAST_CACHED_FILE, value).apply()
+
+    /**
+     * Chế độ tỷ lệ hiển thị video (SCALE_FIT, SCALE_FILL, SCALE_STRETCH). Mặc định là FIT.
+     */
+    var videoScaleMode: String
+        get() = prefs.getString(KEY_VIDEO_SCALE_MODE, SCALE_FIT) ?: SCALE_FIT
+        set(value) = prefs.edit().putString(KEY_VIDEO_SCALE_MODE, value).apply()
 
     // --------------------------------------------------------------------------
     // CẤU HÌNH TRƯỜNG HỢP 1: SERVER MQTT

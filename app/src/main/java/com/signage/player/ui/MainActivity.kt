@@ -80,7 +80,9 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
                 }
             }
-        )
+        ).apply {
+            setScaleMode(prefs.videoScaleMode)
+        }
 
         // Khởi tạo 2 bộ kết nối Server
         initServerConnections()
@@ -365,6 +367,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Điền cấu hình tỷ lệ màn hình hiện tại
+        when (prefs.videoScaleMode) {
+            PreferencesManager.SCALE_FILL -> dBinding.rbScaleFill.isChecked = true
+            PreferencesManager.SCALE_STRETCH -> dBinding.rbScaleStretch.isChecked = true
+            else -> dBinding.rbScaleFit.isChecked = true
+        }
+
         // Lắng nghe sự kiện chuyển đổi chế độ trên giao diện
         dBinding.rgSyncMode.setOnCheckedChangeListener { _, checkedId ->
             when (checkedId) {
@@ -404,6 +413,15 @@ class MainActivity : AppCompatActivity() {
 
         // Lưu và áp dụng cấu hình
         dBinding.btnSaveAndPlay.setOnClickListener {
+            // 1. Lưu & áp dụng chế độ tỷ lệ màn hình (Scale Mode)
+            val selectedScaleMode = when (dBinding.rgScaleMode.checkedRadioButtonId) {
+                R.id.rbScaleFill -> PreferencesManager.SCALE_FILL
+                R.id.rbScaleStretch -> PreferencesManager.SCALE_STRETCH
+                else -> PreferencesManager.SCALE_FIT
+            }
+            prefs.videoScaleMode = selectedScaleMode
+            playerManager.setScaleMode(selectedScaleMode)
+
             val selectedMode = when (dBinding.rgSyncMode.checkedRadioButtonId) {
                 R.id.rbModeMqtt -> PreferencesManager.MODE_MQTT
                 R.id.rbModeHttp -> PreferencesManager.MODE_HTTP_API

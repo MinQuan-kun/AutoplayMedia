@@ -9,15 +9,23 @@
     android:keepScreenOn="true"
     android:focusable="true">
 
-    <!-- Video Player View (Native VideoView tương thích Android 4.3 - 15) -->
-    <VideoView
-        android:id="@+id/videoView"
+    <!-- Khung chứa Video Player tự động căn giữa và co giãn thích ứng theo màn hình -->
+    <FrameLayout
+        android:id="@+id/videoContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@color/black"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.signage.player.ui.ScalableVideoView
+            android:id="@+id/videoView"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center" />
+    </FrameLayout>
 
     <!-- Overlay during Downloading / Syncing / Errors -->
     <androidx.cardview.widget.CardView

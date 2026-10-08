@@ -252,12 +252,17 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // 1. Kiểm tra xem file video đã có sẵn và nguyên vẹn trong máy chưa
         val cachedFile = downloader.getCachedFileForUrl(currentUrl)
-        if (cachedFile != null) {
+        if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
+            binding.downloadOverlay.visibility = View.GONE
             binding.tvOfflineBadge.visibility = View.VISIBLE
             playerManager.playVideoFile(cachedFile)
+            // Đã có video đầy đủ -> Phát ngay lập tức, KHÔNG tải lại để tránh tốn băng thông và đầy bộ nhớ!
+            return
         }
 
+        // 2. Chỉ tải nếu chưa có file hoặc file bị thiếu
         startDownloadAndPlay(currentUrl)
     }
 

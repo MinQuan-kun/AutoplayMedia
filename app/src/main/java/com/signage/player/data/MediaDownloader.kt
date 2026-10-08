@@ -1,6 +1,7 @@
 package com.signage.player.data
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -16,14 +17,21 @@ import java.util.concurrent.TimeUnit
 
 /**
  * ==============================================================================
- * BỘ TẢI FILE VIDEO CHẠY NGẦM (BACKGROUND DOWNLOADER)
+ * BỘ TẢI FILE VIDEO THÔNG MINH & TỰ ĐỘNG DỌN RÁC (CRASH-PROOF & STORAGE-SAFE)
  * ==============================================================================
- * Tương thích từ Android 4.3 (Jelly Bean) đến Android 14/15 mới nhất:
- * - Kích hoạt TLS 1.2 cho Android 4.3/4.4 để tải an toàn qua HTTPS (Google Drive, Cloud).
- * - Lưu trữ an toàn trong Internal Storage (không cần quyền truy cập thẻ nhớ).
- * - Sử dụng file tạm (.download) và cơ chế đổi tên nguyên tử (Atomic Rename).
+ * Các cơ chế bảo vệ dung lượng và chống văng bộ nhớ:
+ * 1. Tự động dọn sạch file tạm (.download) mồ côi ngay khi mở app hoặc trước khi tải.
+ * 2. Xóa ngay file tạm nếu quá trình tải bị đứt mạng hoặc gặp sự cố (không để rác đọng lại).
+ * 3. Kiểm tra dung lượng bộ nhớ trống (usableSpace) trước khi tải để tránh tràn ổ đĩa.
+ * 4. Tự động xoá sạch các video cũ đã phát trước đó, chỉ giữ duy nhất video đang chạy.
+ * 5. Bắt toàn bộ lỗi (kể cả OutOfMemoryError) để đảm bảo ứng dụng KHÔNG BAO GIỜ BỊ VĂNG.
  */
 class MediaDownloader(private val context: Context) {
+
+    companion object {
+        private const val TAG = "MediaDownloader"
+        private const val MIN_FREE_SPACE_BYTES = 50L * 1024 * 1024 // Tối thiểu phải còn 50MB trống
+    }
 
     private val client: OkHttpClient = TLSSocketFactory.enableTls12OnPreLollipop(
         OkHttpClient.Builder()
@@ -33,35 +41,120 @@ class MediaDownloader(private val context: Context) {
             .followSslRedirects(true)
     ).build()
 
+    // Thư mục lưu trữ video: /data/data/com.signage.player/files/signage_media
     private val mediaDir: File by lazy {
         File(context.filesDir, "signage_media").apply {
             if (!exists()) mkdirs()
         }
     }
 
+    init {
+        // Tự động dọn sạch rác sót lại từ các lần chạy trước ngay khi khởi tạo
+        cleanOrphanTempFiles()
+    }
+
     /**
-     * Tải video ngầm qua Coroutine IO.
+     * Dọn sạch toàn bộ các file tạm (.download hoặc temp_) bị bỏ dở do mất điện/văng app.
+     */
+    fun cleanOrphanTempFiles() {
+        try {
+            var deletedCount = 0
+            var freedBytes = 0L
+            mediaDir.listFiles()?.forEach { file ->
+                if (file.isFile && (file.name.endsWith(".download") || file.name.startsWith("temp_"))) {
+                    freedBytes += file.length()
+                    if (file.delete()) deletedCount++
+                }
+            }
+            if (deletedCount > 0) {
+                val mb = freedBytes / (1024 * 1024)
+                Log.d(TAG, "Đã dọn dẹp $deletedCount file tạm mồ côi, giải phóng $mb MB bộ nhớ")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi khi dọn file tạm: ${e.message}")
+        }
+    }
+
+    /**
+     * Tự động xóa các video cũ, CHỈ GIỮ LẠI DUY NHẤT file video đang chạy hiện tại.
+     * Ngăn chặn tình trạng đổi nhiều video làm phình to dung lượng ứng dụng theo thời gian.
+     */
+    fun purgeOldVideosExcept(activeFile: File?) {
+        try {
+            var deletedCount = 0
+            mediaDir.listFiles()?.forEach { file ->
+                if (file.isFile && !file.name.endsWith(".download")) {
+                    if (activeFile == null || file.absolutePath != activeFile.absolutePath) {
+                        if (file.delete()) deletedCount++
+                    }
+                }
+            }
+            if (deletedCount > 0) {
+                Log.d(TAG, "Đã dọn sạch $deletedCount video cũ để tối ưu dung lượng bộ nhớ")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Lỗi khi dọn video cũ: ${e.message}")
+        }
+    }
+
+    /**
+     * Kiểm tra xem video theo đường dẫn URL đã được tải hoàn tất trong máy chưa.
+     */
+    fun getCachedFileForUrl(url: String): File? {
+        if (url.isBlank()) return null
+        val targetFile = File(mediaDir, generateFileName(url, null))
+        return if (targetFile.exists() && targetFile.length() > 0) targetFile else null
+    }
+
+    /**
+     * Xóa toàn bộ video và file đệm trong máy (khi người dùng bấm nút Xoá Cache).
+     */
+    fun clearAllCache(): Boolean {
+        return try {
+            mediaDir.listFiles()?.forEach { it.delete() }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Tải file video chạy ngầm với cơ chế tự bảo vệ bộ nhớ máy.
      */
     suspend fun downloadMedia(
         rawUrl: String,
         onProgress: (progress: Int, bytesRead: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
+        var tempFile: File? = null
+        var isDownloadSuccessful = false
+
         try {
-            // 1. Chặn file ảnh
+            // 1. Dọn dẹp rác mồ côi trước khi bắt đầu tải mới
+            cleanOrphanTempFiles()
+
+            // 2. Kiểm tra dung lượng bộ nhớ trống trên thiết bị
+            val freeSpace = context.filesDir.usableSpace
+            if (freeSpace < MIN_FREE_SPACE_BYTES) {
+                return@withContext Result.failure(
+                    Exception("Bộ nhớ máy sắp đầy (chỉ còn dưới 50MB trống). Không thể tải video!")
+                )
+            }
+
+            // 3. Chặn ảnh
             if (UrlHelper.isImage(rawUrl)) {
                 return@withContext Result.failure(
                     IllegalArgumentException("Không thể sử dụng ảnh! Ứng dụng chỉ hỗ trợ video.")
                 )
             }
 
-            // 2. Chặn link YouTube thô
+            // 4. Chặn link YouTube thô
             if (UrlHelper.isYouTube(rawUrl)) {
                 return@withContext Result.failure(
                     IllegalArgumentException("Link YouTube không thể tải trực tiếp file thô! Vui lòng dùng link file trực tiếp (.mp4) hoặc Google Drive.")
                 )
             }
 
-            // 3. Tự chuyển đổi link Google Drive / Dropbox sang link tải trực tiếp
+            // 5. Chuyển đổi link Google Drive / Dropbox sang link tải trực tiếp
             val directUrl = UrlHelper.transformToDirectDownloadUrl(rawUrl)
 
             val request = Request.Builder()
@@ -71,7 +164,7 @@ class MediaDownloader(private val context: Context) {
 
             val response = client.newCall(request).execute()
 
-            // 4. Kiểm tra mã phản hồi HTTP
+            // 6. Kiểm tra mã phản hồi HTTP
             if (!response.isSuccessful) {
                 val code = response.code()
                 val errorMsg = when (code) {
@@ -84,7 +177,7 @@ class MediaDownloader(private val context: Context) {
                 return@withContext Result.failure(Exception(errorMsg))
             }
 
-            // 5. Kiểm tra Content-Type
+            // 7. Kiểm tra Content-Type
             val contentType = response.header("Content-Type")?.lowercase(Locale.ROOT) ?: ""
             if (contentType.startsWith("image/")) {
                 response.close()
@@ -105,18 +198,30 @@ class MediaDownloader(private val context: Context) {
                 return@withContext Result.failure(Exception("Nội dung rỗng từ máy chủ"))
             }
 
-            // 6. Ghi file tạm
             val contentLength = body.contentLength()
+
+            // 8. Kiểm tra xem đĩa có đủ dung lượng cho file video này không
+            if (contentLength > 0 && freeSpace < (contentLength + MIN_FREE_SPACE_BYTES)) {
+                response.close()
+                val needMb = (contentLength + MIN_FREE_SPACE_BYTES) / (1024 * 1024)
+                val haveMb = freeSpace / (1024 * 1024)
+                return@withContext Result.failure(
+                    Exception("Bộ nhớ thiết bị không đủ! Cần $needMb MB nhưng máy chỉ còn $haveMb MB.")
+                )
+            }
+
+            // 9. Chuẩn bị file tạm (.download)
             val targetFileName = generateFileName(rawUrl, response.header("Content-Disposition"))
             val targetFile = File(mediaDir, targetFileName)
-            val tempFile = File(mediaDir, "$targetFileName.download")
+            val temp = File(mediaDir, "$targetFileName.download")
+            tempFile = temp
 
             var inputStream: InputStream? = null
             var outputStream: FileOutputStream? = null
 
             try {
                 inputStream = body.byteStream()
-                outputStream = FileOutputStream(tempFile)
+                outputStream = FileOutputStream(temp)
 
                 val buffer = ByteArray(8 * 1024)
                 var bytesReadTotal: Long = 0
@@ -141,26 +246,40 @@ class MediaDownloader(private val context: Context) {
                 response.close()
             }
 
-            // 7. Đổi tên nguyên tử
-            if (tempFile.exists() && tempFile.length() > 0) {
+            // 10. Đổi tên nguyên tử thành công
+            if (temp.exists() && temp.length() > 0) {
                 if (targetFile.exists()) targetFile.delete()
-                val success = tempFile.renameTo(targetFile)
+                val success = temp.renameTo(targetFile)
                 if (success && targetFile.exists()) {
+                    isDownloadSuccessful = true
+                    // Dọn dẹp tất cả các video cũ trước đó, chỉ giữ lại file mới tải
+                    purgeOldVideosExcept(targetFile)
                     return@withContext Result.success(targetFile)
                 } else {
-                    return@withContext Result.failure(Exception("Không thể lưu file video vào bộ nhớ thiết bị"))
+                    return@withContext Result.failure(Exception("Không thể ghi file video vào bộ nhớ hệ thống"))
                 }
             } else {
-                tempFile.delete()
                 return@withContext Result.failure(Exception("Dữ liệu tải về bị rỗng (0 bytes)"))
             }
 
         } catch (e: UnknownHostException) {
-            return@withContext Result.failure(Exception("Không thể kết nối Internet hoặc tên miền máy chủ không tồn tại"))
+            return@withContext Result.failure(Exception("Không có kết nối Internet hoặc tên miền không tồn tại"))
         } catch (e: SocketTimeoutException) {
             return@withContext Result.failure(Exception("Kết nối quá thời gian chờ (Timeout). Vui lòng thử lại với mạng ổn định hơn"))
-        } catch (e: Exception) {
-            return@withContext Result.failure(e)
+        } catch (t: Throwable) {
+            // Bắt mọi lỗi kể cả OutOfMemoryError để không bao giờ văng ứng dụng
+            Log.e(TAG, "Lỗi nghiêm trọng khi tải video: ${t.message}", t)
+            return@withContext Result.failure(Exception("Lỗi tải video: ${t.localizedMessage ?: "Không xác định"}"))
+        } finally {
+            // QUAN TRỌNG NHẤT: Nếu tải thất bại hoặc bị ngắt ngang, XÓA NGAY LẬP TỨC file .download dở dang!
+            if (!isDownloadSuccessful && tempFile != null && tempFile.exists()) {
+                try {
+                    tempFile.delete()
+                    Log.d(TAG, "Đã xóa ngay file tạm dở dang để bảo vệ dung lượng bộ nhớ máy")
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
         }
     }
 
@@ -191,23 +310,5 @@ class MediaDownloader(private val context: Context) {
         val md = MessageDigest.getInstance("MD5")
         return md.digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
-    }
-
-    fun getCachedFileForUrl(url: String): File? {
-        val targetFile = File(mediaDir, generateFileName(url, null))
-        return if (targetFile.exists() && targetFile.length() > 0) targetFile else null
-    }
-
-    fun clearAllCachedVideos(): Boolean {
-        return try {
-            mediaDir.listFiles()?.forEach { it.delete() }
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    fun clearAllCache(): Boolean {
-        return clearAllCachedVideos()
     }
 }

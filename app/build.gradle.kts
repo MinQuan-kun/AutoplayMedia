@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.signage.player"
-        minSdk = 18       // Ho tro tu Android 4.3 tro len
+        minSdk = 16       // Ho tro tu Android 4.1 (Jelly Bean) tro len
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
@@ -17,6 +17,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
 
     buildTypes {
         release {

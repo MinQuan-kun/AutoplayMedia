@@ -74,8 +74,7 @@ class MainActivity : AppCompatActivity() {
         prefs = PreferencesManager(this)
         downloader = MediaDownloader(this)
         playerManager = SignagePlayerManager(
-            context = this,
-            playerView = binding.playerView,
+            videoView = binding.videoView,
             onError = { errorMessage ->
                 runOnUiThread {
                     Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
@@ -327,8 +326,8 @@ class MainActivity : AppCompatActivity() {
         val dBinding = DialogSettingsBinding.inflate(layoutInflater)
         dialogBinding = dBinding
 
-        // Điền giá trị hiện tại vào giao diện
-        dBinding.tvDeviceIdHeader.text = "MÃ THIẾT BỊ (DEVICE ID): ${prefs.mqttDeviceId}"
+        // Điền giá trị hiện tại vào giao diện (Hiển thị địa chỉ MAC thật của phần cứng)
+        dBinding.tvDeviceIdHeader.text = "MÃ THIẾT BỊ (MAC / ID): ${prefs.mqttDeviceId}"
         dBinding.etMqttBroker.setText(prefs.mqttBrokerUrl)
         dBinding.etMqttUser.setText(prefs.mqttUsername)
         dBinding.etMqttPass.setText(prefs.mqttPassword)

@@ -9,15 +9,15 @@
     android:keepScreenOn="true"
     android:focusable="true">
 
-    <!-- Video Player View (Media3 ExoPlayer) -->
-    <androidx.media3.ui.PlayerView
-        android:id="@+id/playerView"
+    <!-- Video Player View (Native VideoView tương thích Android 4.3 - 15) -->
+    <VideoView
+        android:id="@+id/videoView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/black"
-        app:use_controller="false"
-        app:surface_type="surface_view"
-        app:resize_mode="fit" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <!-- Overlay during Downloading / Syncing / Errors -->
     <androidx.cardview.widget.CardView

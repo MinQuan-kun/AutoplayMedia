@@ -13,7 +13,7 @@ import java.util.UUID
  * 2. Chế độ REST API: Server Web (API URL).
  * 3. Chế độ Thủ công: Nhập link video trực tiếp (Google Drive, MP4...).
  */
-class PreferencesManager(context: Context) {
+class PreferencesManager(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -98,13 +98,19 @@ class PreferencesManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_MQTT_PASSWORD, value.trim()).apply()
 
     /**
-     * Mã định danh duy nhất của thiết bị (Device ID).
+     * Địa chỉ MAC thật của card mạng thiết bị.
+     */
+    val macAddress: String
+        get() = DeviceIdentifierHelper.getMacAddress(context)
+
+    /**
+     * Mã định danh duy nhất của thiết bị (Device ID - Tự động lấy theo địa chỉ MAC phần cứng).
      */
     var mqttDeviceId: String
         get() {
             var id = prefs.getString(KEY_MQTT_DEVICE_ID, null)
             if (id.isNullOrBlank()) {
-                id = "Signage_" + UUID.randomUUID().toString().replace("-", "").take(6).uppercase()
+                id = DeviceIdentifierHelper.getMacAddress(context)
                 prefs.edit().putString(KEY_MQTT_DEVICE_ID, id).apply()
             }
             return id

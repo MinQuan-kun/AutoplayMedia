@@ -5,6 +5,7 @@
     <!-- Network permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- Keep screen awake for 24/7 signage display -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -27,6 +28,7 @@
         android:required="false" />
 
     <application
+        android:name="androidx.multidex.MultiDexApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

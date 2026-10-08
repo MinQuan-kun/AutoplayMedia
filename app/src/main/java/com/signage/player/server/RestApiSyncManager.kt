@@ -3,6 +3,7 @@ package com.signage.player.server
 import android.content.Context
 import android.util.Log
 import com.signage.player.data.PreferencesManager
+import com.signage.player.data.TLSSocketFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,16 +18,11 @@ import java.util.regex.Pattern
 
 /**
  * ==============================================================================
- * BỘ QUẢN LÝ ĐỒNG BỘ HTTP REST API (DÀNH CHO SERVER WEB)
+ * BỘ QUẢN LÝ ĐỒNG BỘ HTTP REST API
  * ==============================================================================
- * Dành cho trường hợp có hệ thống Web ERP/CRM/CMS (PHP, Node.js, .NET...)
- * và muốn thiết bị định kỳ gọi lên Server để lấy link video mới nhất.
- *
- * Cách thức hoạt động:
- * 1. Ứng dụng gửi HTTP GET đến đường dẫn API.
- *    Kèm Header "X-Device-Id" để máy chủ phân biệt từng máy lọc nước.
- * 2. Máy chủ trả về JSON: {"videoUrl": "https://..."} hoặc URL text thẳng.
- * 3. Ứng dụng tự động đọc link và chuyển video mới nếu có thay đổi.
+ * Tương thích từ Android 4.3 (Jelly Bean) đến Android 14/15:
+ * - Hỗ trợ TLS 1.2 kết nối HTTPS an toàn.
+ * - Định kỳ gửi HTTP GET lên Server API kèm Header "X-Device-Id".
  */
 class RestApiSyncManager(
     context: Context,
@@ -38,19 +34,17 @@ class RestApiSyncManager(
     private val scope = CoroutineScope(Dispatchers.IO)
     private var syncJob: Job? = null
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = TLSSocketFactory.enableTls12OnPreLollipop(
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+    ).build()
 
     companion object {
         private const val TAG = "RestApiSyncManager"
         private val URL_JSON_PATTERN = Pattern.compile("\"(?:videoUrl|url)\"\\s*:\\s*\"([^\"]+)\"")
     }
 
-    /**
-     * Bắt đầu chu kỳ định kỳ gọi lên Server API (chạy ngay lần đầu, sau đó lặp lại theo phút).
-     */
     fun startSync() {
         val apiUrl = prefs.serverApiUrl.trim()
         if (apiUrl.isBlank()) {
@@ -72,14 +66,10 @@ class RestApiSyncManager(
         }
     }
 
-    /**
-     * Gửi 1 request lên Server API để lấy link video.
-     */
     suspend fun fetchLatestVideoFromApi(apiUrl: String) = withContext(Dispatchers.IO) {
         try {
             onStatusChanged(false, "Đang kiểm tra Server API...")
 
-            // Tạo request kèm định danh Device ID trong Header
             val request = Request.Builder()
                 .url(apiUrl)
                 .header("X-Device-Id", prefs.mqttDeviceId)
@@ -89,14 +79,14 @@ class RestApiSyncManager(
             val response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
-                val errorMsg = "Server trả về lỗi HTTP ${response.code}"
+                val errorMsg = "Server trả về lỗi HTTP ${response.code()}"
                 Log.w(TAG, errorMsg)
                 onStatusChanged(false, errorMsg)
                 response.close()
                 return@withContext
             }
 
-            val bodyString = response.body?.string()?.trim() ?: ""
+            val bodyString = response.body()?.string()?.trim() ?: ""
             response.close()
 
             if (bodyString.isBlank()) {
@@ -104,7 +94,6 @@ class RestApiSyncManager(
                 return@withContext
             }
 
-            // Bóc tách link từ JSON hoặc chuỗi text
             var extractedUrl = bodyString
             if (bodyString.startsWith("{") && bodyString.endsWith("}")) {
                 val matcher = URL_JSON_PATTERN.matcher(bodyString)
@@ -120,20 +109,21 @@ class RestApiSyncManager(
                 onStatusChanged(true, "Kết nối Server API thành công")
                 onVideoUrlReceived(extractedUrl)
             } else {
-                onStatusChanged(false, "Server không trả về URL video hợp lệ")
+                val errorMsg = "Phản hồi từ Server không chứa URL hợp lệ"
+                Log.w(TAG, errorMsg)
+                onStatusChanged(false, errorMsg)
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Lỗi gọi Server API: ${e.message}")
-            onStatusChanged(false, "Lỗi kết nối API: ${e.localizedMessage}")
+            val errorMsg = "Lỗi kết nối Server API: ${e.message}"
+            Log.e(TAG, errorMsg, e)
+            onStatusChanged(false, errorMsg)
         }
     }
 
-    /**
-     * Dừng tiến trình gọi định kỳ khi tắt app hoặc chuyển chế độ khác.
-     */
     fun stopSync() {
         syncJob?.cancel()
         syncJob = null
+        Log.d(TAG, "Đã dừng đồng bộ REST API")
     }
 }

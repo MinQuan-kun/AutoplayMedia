@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -9,10 +9,11 @@ android {
 
     defaultConfig {
         applicationId = "com.signage.player"
-        minSdk = 24       // Hỗ trợ từ Android 7.0 trở lên (phù hợp 99.9% màn hình TV, TV Box và bo mạch nhúng)
+        minSdk = 18       // Ho tro tu Android 4.3 tro len
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
+        multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -27,11 +28,11 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
     }
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "1.8"
     }
     buildFeatures {
         viewBinding = true
@@ -39,28 +40,21 @@ android {
 }
 
 dependencies {
-    // Android Core & Giao diện Material
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Multidex ho tro Android 4.x
+    implementation("androidx.multidex:multidex:2.0.1")
 
-    // Mạng & Tải file ngầm (OkHttp)
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Android Core & Giao dien tuong thich Android 4.3+ (minSdk 14-18)
+    implementation("androidx.core:core-ktx:1.6.0")
+    implementation("androidx.appcompat:appcompat:1.3.1")
+    implementation("com.google.android.material:material:1.4.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.0.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.3.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.3.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
-    // Trình phát Video tối ưu (Google Media3 ExoPlayer)
-    // Tự động giải mã phần cứng, chạy lặp vô tận (continuous loop)
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
-    implementation("androidx.media3:media3-common:1.4.1")
+    // Mang & Tai file tuong thich Android 4.3+ (OkHttp 3.12.13 ho tro Android 4.x & TLS 1.2)
+    implementation("com.squareup.okhttp3:okhttp:3.12.13")
 
-    // Thư viện JAR cục bộ trong thư mục app/libs (giúp Android Studio nhận diện ngay lập tức)
+    // Thu vien Paho MQTT trong app/libs/
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
-
-    // Giao thức MQTT thời gian thực (Real-time IoT Remote Control)
-    // Nhận lệnh cập nhật video tức thì (< 1 giây) từ Server quản trị
-    implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
 }

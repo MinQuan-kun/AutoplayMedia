@@ -1,85 +1,103 @@
 package com.signage.player.player
 
-import android.content.Context
+import android.media.MediaPlayer
 import android.net.Uri
 import android.view.View
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
+import android.widget.VideoView
 import java.io.File
 
 /**
- * Trình điều khiển phát Video
+ * ==============================================================================
+ * TRÌNH ĐIỀU KHIỂN PHÁT VIDEO NATIVE (TƯƠNG THÍCH MỌI PHIÊN BẢN ANDROID 4.3 - 15)
+ * ==============================================================================
+ * - Sử dụng android.widget.VideoView & MediaPlayer tích hợp sẵn trong hệ thống Android.
+ * - Giải mã phần cứng trực tiếp (Hardware Acceleration VPU), cực nhẹ, không tốn RAM.
+ * - Tự động lặp lại vô tận 24/7 (Continuous Loop) không gián đoạn.
+ * - Không phụ thuộc thư viện Google Media3 nặng nề, hoàn toàn không bị lỗi văng trên TV cũ.
  */
 class SignagePlayerManager(
-    private val context: Context,
-    private val playerView: PlayerView,
+    private val videoView: VideoView,
     private val onError: (String) -> Unit
 ) {
 
-    private var exoPlayer: ExoPlayer? = null
+    private var mediaPlayer: MediaPlayer? = null
+    private var currentFile: File? = null
 
     init {
-        initExoPlayer()
+        setupListeners()
     }
-    private fun initExoPlayer() {
-        exoPlayer = ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ALL
-            playWhenReady = true
 
-            addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    val msg = when (error.errorCode) {
-                        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
-                            "Thiết bị không hỗ trợ bộ giải mã cho video này (Codec không tương thích)"
-                        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ->
-                            "Định dạng file video bị lỗi hoặc không đầy đủ (Malformed file)"
-                        else -> "Lỗi phát video: ${error.localizedMessage}"
-                    }
-                    onError(msg)
-                }
-            })
+    private fun setupListeners() {
+        videoView.setOnPreparedListener { mp ->
+            mediaPlayer = mp
+            mp.isLooping = true // Lặp vô tận 24/7
+            videoView.start()
         }
 
-        // Gắn Player vào giao diện hiển thị PlayerView
-        playerView.player = exoPlayer
-    }
+        videoView.setOnCompletionListener {
+            // Dự phòng nếu hệ điều hành của một số TV đời cũ không tự bắt cờ looping
+            if (currentFile != null && currentFile!!.exists()) {
+                videoView.start()
+            }
+        }
 
-    fun playVideoFile(file: File) {
-        playerView.visibility = View.VISIBLE
-        val uri = Uri.fromFile(file)
-        val mediaItem = MediaItem.fromUri(uri)
-
-        exoPlayer?.let { player ->
-            player.stop()
-            player.clearMediaItems()
-            player.setMediaItem(mediaItem)
-            player.prepare()
-            player.play()
+        videoView.setOnErrorListener { _, what, extra ->
+            val msg = when (what) {
+                MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "Bộ giải mã đa phương tiện hệ thống khởi động lại"
+                else -> "Lỗi giải mã video (Mã lỗi: $what, Chi tiết: $extra). Vui lòng kiểm tra định dạng video."
+            }
+            onError(msg)
+            true // Đã bắt lỗi, ngăn Android hiện popup lỗi crash khó chịu
         }
     }
 
     /**
-     * Tạm dừng khi ứng dụng chuyển xuống nền hoặc khi có sự kiện ưu tiên.
+     * Nạp và phát file video nội bộ đã được lưu trong bộ nhớ máy.
+     */
+    fun playVideoFile(file: File) {
+        currentFile = file
+        videoView.visibility = View.VISIBLE
+        val uri = Uri.fromFile(file)
+        videoView.stopPlayback()
+        videoView.setVideoURI(uri)
+    }
+
+    /**
+     * Tạm dừng khi chuyển sang màn hình khác.
      */
     fun pause() {
-        exoPlayer?.pause()
+        try {
+            if (videoView.isPlaying) {
+                videoView.pause()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     /**
-     * Tiếp tục phát khi ứng dụng hiển thị lại.
+     * Tiếp tục phát khi quay trở lại ứng dụng.
      */
     fun resume() {
-        exoPlayer?.play()
+        try {
+            if (!videoView.isPlaying && currentFile != null && currentFile!!.exists()) {
+                videoView.start()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     /**
-     * Giải phóng bộ nhớ RAM và GPU khi Activity bị huỷ.
+     * Giải phóng tài nguyên phần cứng.
      */
     fun release() {
-        exoPlayer?.release()
-        exoPlayer = null
+        try {
+            videoView.stopPlayback()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        mediaPlayer = null
+        currentFile = null
     }
 }

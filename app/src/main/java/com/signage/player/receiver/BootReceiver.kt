@@ -8,7 +8,7 @@ import com.signage.player.ui.MainActivity
 
 /**
  * Bộ thu phát tín hiệu khởi động hệ thống (Boot Completed Broadcast Receiver):
- * - Tự động kích hoạt khi thiết bị (Điện thoại, TV Box, Bo mạch màn hình máy lọc nước) bật nguồn.
+ * - Tự động kích hoạt khi thiết bị (Điện thoại, TV Box, Bo mạch màn hình) bật nguồn.
  * - Khởi chạy MainActivity lên màn hình chính mà không cần thao tác bấm tay của con người.
  */
 class BootReceiver : BroadcastReceiver() {

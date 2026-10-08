@@ -15,22 +15,24 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Bộ xử lý tải file Video chạy ngầm (Background Downloader):
- * - Sử dụng OkHttp với cơ chế theo dõi chuyển hướng (Redirects).
- * - Lưu trữ an toàn trong Internal Storage (không cần cấp quyền đọc ghi thẻ nhớ).
- * - Sử dụng file tạm (.download) để chống lỗi file bị hỏng nếu rớt mạng giữa chừng.
+ * ==============================================================================
+ * BỘ TẢI FILE VIDEO CHẠY NGẦM (BACKGROUND DOWNLOADER)
+ * ==============================================================================
+ * Tương thích từ Android 4.3 (Jelly Bean) đến Android 14/15 mới nhất:
+ * - Kích hoạt TLS 1.2 cho Android 4.3/4.4 để tải an toàn qua HTTPS (Google Drive, Cloud).
+ * - Lưu trữ an toàn trong Internal Storage (không cần quyền truy cập thẻ nhớ).
+ * - Sử dụng file tạm (.download) và cơ chế đổi tên nguyên tử (Atomic Rename).
  */
 class MediaDownloader(private val context: Context) {
 
-    // Cấu hình OkHttp Client với timeout dài để tải file video dung lượng lớn
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient = TLSSocketFactory.enableTls12OnPreLollipop(
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+    ).build()
 
-    // Thư mục lưu trữ video nội bộ: /data/data/com.signage.player/files/signage_media
     private val mediaDir: File by lazy {
         File(context.filesDir, "signage_media").apply {
             if (!exists()) mkdirs()
@@ -38,31 +40,28 @@ class MediaDownloader(private val context: Context) {
     }
 
     /**
-     * QUAN TRỌNG: Hàm tải video chính chạy trên Coroutine Dispatchers.IO.
-     * @param rawUrl Đường dẫn video đầu vào do người dùng nhập.
-     * @param onProgress Callback thông báo tiến độ tải (% hoàn thành và số byte đã tải).
-     * @return Result chứa File video đã tải xong hoặc Exception nếu có lỗi.
+     * Tải video ngầm qua Coroutine IO.
      */
     suspend fun downloadMedia(
         rawUrl: String,
         onProgress: (progress: Int, bytesRead: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
-            // 1. Kiểm tra nếu URL là ảnh -> Chặn ngay lập tức
+            // 1. Chặn file ảnh
             if (UrlHelper.isImage(rawUrl)) {
                 return@withContext Result.failure(
                     IllegalArgumentException("Không thể sử dụng ảnh! Ứng dụng chỉ hỗ trợ video.")
                 )
             }
 
-            // 2. Kiểm tra nếu URL là YouTube -> Chặn và hướng dẫn
+            // 2. Chặn link YouTube thô
             if (UrlHelper.isYouTube(rawUrl)) {
                 return@withContext Result.failure(
-                    IllegalArgumentException("Link YouTube không thể tải trực tiếp file thô về máy do mã hoá bảo vệ luồng của Google! Vui lòng dùng link file trực tiếp (.mp4) hoặc Google Drive.")
+                    IllegalArgumentException("Link YouTube không thể tải trực tiếp file thô! Vui lòng dùng link file trực tiếp (.mp4) hoặc Google Drive.")
                 )
             }
 
-            // 3. Tự động chuyển link Google Drive / Dropbox sang link tải trực tiếp
+            // 3. Tự chuyển đổi link Google Drive / Dropbox sang link tải trực tiếp
             val directUrl = UrlHelper.transformToDirectDownloadUrl(rawUrl)
 
             val request = Request.Builder()
@@ -72,19 +71,20 @@ class MediaDownloader(private val context: Context) {
 
             val response = client.newCall(request).execute()
 
-            // 4. Kiểm tra mã phản hồi HTTP từ máy chủ
+            // 4. Kiểm tra mã phản hồi HTTP
             if (!response.isSuccessful) {
-                val errorMsg = when (response.code) {
+                val code = response.code()
+                val errorMsg = when (code) {
                     404 -> "Không tìm thấy file video (Lỗi 404 Not Found). Link có thể đã bị xoá."
                     403 -> "Không có quyền truy cập (Lỗi 403 Forbidden). Nếu dùng Google Drive, hãy bật quyền 'Bất kỳ ai có đường liên kết'."
-                    500, 502, 503 -> "Máy chủ lưu trữ video đang gặp sự cố (HTTP ${response.code})."
-                    else -> "Tải thất bại: HTTP ${response.code} ${response.message}"
+                    500, 502, 503 -> "Máy chủ lưu trữ video đang gặp sự cố (HTTP $code)."
+                    else -> "Tải thất bại: HTTP $code ${response.message()}"
                 }
                 response.close()
                 return@withContext Result.failure(Exception(errorMsg))
             }
 
-            // 5. Kiểm tra định dạng dữ liệu (Content-Type) trả về
+            // 5. Kiểm tra Content-Type
             val contentType = response.header("Content-Type")?.lowercase(Locale.ROOT) ?: ""
             if (contentType.startsWith("image/")) {
                 response.close()
@@ -100,12 +100,12 @@ class MediaDownloader(private val context: Context) {
                 )
             }
 
-            val body = response.body ?: run {
+            val body = response.body() ?: run {
                 response.close()
                 return@withContext Result.failure(Exception("Nội dung rỗng từ máy chủ"))
             }
 
-            // 6. Chuẩn bị file tạm và ghi dữ liệu theo từng khối (Chunk 8KB)
+            // 6. Ghi file tạm
             val contentLength = body.contentLength()
             val targetFileName = generateFileName(rawUrl, response.header("Content-Disposition"))
             val targetFile = File(mediaDir, targetFileName)
@@ -130,7 +130,6 @@ class MediaDownloader(private val context: Context) {
                         val progress = ((bytesReadTotal * 100) / contentLength).toInt().coerceIn(0, 100)
                         onProgress(progress, bytesReadTotal, contentLength)
                     } else {
-                        // Trường hợp máy chủ không gửi Content-Length (Chunked transfer)
                         onProgress(-1, bytesReadTotal, -1)
                     }
                 }
@@ -142,39 +141,64 @@ class MediaDownloader(private val context: Context) {
                 response.close()
             }
 
-            // 7. QUAN TRỌNG: Chỉ khi tải đủ 100%, mới đổi tên file tạm thành file chính thức
-            // Giúp ngăn ngừa lỗi người dùng phát phải file video bị cắt cụt do mất kết nối giữa chừng
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-            if (!tempFile.renameTo(targetFile)) {
-                tempFile.copyTo(targetFile, overwrite = true)
+            // 7. Đổi tên nguyên tử
+            if (tempFile.exists() && tempFile.length() > 0) {
+                if (targetFile.exists()) targetFile.delete()
+                val success = tempFile.renameTo(targetFile)
+                if (success && targetFile.exists()) {
+                    return@withContext Result.success(targetFile)
+                } else {
+                    return@withContext Result.failure(Exception("Không thể lưu file video vào bộ nhớ thiết bị"))
+                }
+            } else {
                 tempFile.delete()
+                return@withContext Result.failure(Exception("Dữ liệu tải về bị rỗng (0 bytes)"))
             }
 
-            Result.success(targetFile)
         } catch (e: UnknownHostException) {
-            Result.failure(Exception("Không thể kết nối máy chủ! Vui lòng kiểm tra lại đường truyền mạng hoặc tên miền URL."))
+            return@withContext Result.failure(Exception("Không thể kết nối Internet hoặc tên miền máy chủ không tồn tại"))
         } catch (e: SocketTimeoutException) {
-            Result.failure(Exception("Hết thời gian chờ kết nối (Timeout). Mạng quá yếu hoặc máy chủ phản hồi chậm."))
+            return@withContext Result.failure(Exception("Kết nối quá thời gian chờ (Timeout). Vui lòng thử lại với mạng ổn định hơn"))
         } catch (e: Exception) {
-            Result.failure(e)
+            return@withContext Result.failure(e)
         }
     }
 
-    /**
-     * Kiểm tra xem trong máy đã có sẵn bản sao của link này chưa (để phát Offline tức thì).
-     */
-    fun getCachedFileForUrl(url: String): File? {
-        val targetName = generateFileName(url, null)
-        val file = File(mediaDir, targetName)
-        return if (file.exists() && file.length() > 0) file else null
+    private fun generateFileName(url: String, contentDisposition: String?): String {
+        var ext = ".mp4"
+        contentDisposition?.let { cd ->
+            val match = Regex("""filename=["']?([^"';]+)["']?""").find(cd)
+            match?.groups?.get(1)?.value?.let { name ->
+                val dotIndex = name.lastIndexOf('.')
+                if (dotIndex != -1) ext = name.substring(dotIndex)
+            }
+        }
+
+        if (ext == ".mp4") {
+            val cleanUrl = url.substringBefore('?').substringBefore('#')
+            val dotIndex = cleanUrl.lastIndexOf('.')
+            if (dotIndex != -1 && dotIndex > cleanUrl.lastIndexOf('/')) {
+                val candidate = cleanUrl.substring(dotIndex)
+                if (candidate.length in 3..5) ext = candidate
+            }
+        }
+
+        val hash = md5(url)
+        return "signage_${hash.take(12)}$ext"
     }
 
-    /**
-     * Xóa sạch toàn bộ video trong bộ nhớ đệm.
-     */
-    fun clearAllCache(): Boolean {
+    private fun md5(input: String): String {
+        val md = MessageDigest.getInstance("MD5")
+        return md.digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    fun getCachedFileForUrl(url: String): File? {
+        val targetFile = File(mediaDir, generateFileName(url, null))
+        return if (targetFile.exists() && targetFile.length() > 0) targetFile else null
+    }
+
+    fun clearAllCachedVideos(): Boolean {
         return try {
             mediaDir.listFiles()?.forEach { it.delete() }
             true
@@ -183,24 +207,7 @@ class MediaDownloader(private val context: Context) {
         }
     }
 
-    /**
-     * Tạo tên file an toàn dựa trên MD5 Hash của URL.
-     */
-    private fun generateFileName(url: String, contentDisposition: String?): String {
-        val cleanUrl = url.split("?").first()
-        val pathFileName = cleanUrl.substringAfterLast("/", "")
-        
-        val ext = when {
-            pathFileName.contains(".") -> "." + pathFileName.substringAfterLast(".")
-            else -> ".mp4" // Mặc định đuôi .mp4
-        }
-
-        val hash = md5(url).take(16)
-        return "video_$hash$ext"
-    }
-
-    private fun md5(input: String): String {
-        val bytes = MessageDigest.getInstance("MD5").digest(input.toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }
+    fun clearAllCache(): Boolean {
+        return clearAllCachedVideos()
     }
 }

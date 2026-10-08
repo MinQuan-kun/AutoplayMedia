@@ -60,13 +60,6 @@ class SignagePlayerManager(
     }
 
     /**
-     * Cập nhật chế độ tỷ lệ hiển thị video (FIT, FILL, STRETCH).
-     */
-    fun setScaleMode(mode: String) {
-        videoView.scaleMode = mode
-    }
-
-    /**
      * Nạp và phát file video nội bộ đã được lưu trong bộ nhớ máy.
      */
     fun playVideoFile(file: File) {

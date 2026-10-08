@@ -299,53 +299,6 @@
                 android:inputType="textUri" />
         </LinearLayout>
 
-        <!-- ================================================================= -->
-        <!-- KHUNG: TỶ LỆ HIỂN THỊ MÀN HÌNH (TÙY CHỈNH KÍCH THƯỚC) -->
-        <!-- ================================================================= -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="TỶ LỆ HIỂN THỊ VIDEO (TÙY CHỌN MÀN HÌNH):"
-            android:textColor="@color/accent_teal"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <RadioGroup
-            android:id="@+id/rgScaleMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp">
-
-            <RadioButton
-                android:id="@+id/rbScaleFit"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="1. Vừa vặn (Fit - Giữ nguyên tỷ lệ gốc, không mất hình)"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                android:buttonTint="@color/accent_teal"
-                android:checked="true" />
-
-            <RadioButton
-                android:id="@+id/rbScaleFill"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="2. Tràn viền (Fill / Crop - Phóng to lấp đầy 100% màn hình, không viền đen)"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                android:buttonTint="@color/accent_teal" />
-
-            <RadioButton
-                android:id="@+id/rbScaleStretch"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="3. Kéo dãn (Stretch - Kéo dãn lấp đầy toàn bộ màn hình)"
-                android:textColor="@color/white"
-                android:textSize="13sp"
-                android:buttonTint="@color/accent_teal" />
-        </RadioGroup>
-
         <!-- Xóa bộ nhớ đệm (Clear cache) -->
         <Button
             android:id="@+id/btnClearCache"

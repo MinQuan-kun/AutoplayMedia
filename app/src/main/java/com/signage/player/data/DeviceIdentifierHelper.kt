@@ -60,7 +60,14 @@ object DeviceIdentifierHelper {
             Log.w(TAG, "Lỗi khi quét NetworkInterface: ${e.message}")
         }
 
-        // Cách 2: Định danh phần cứng chính thức của Google (ANDROID_ID)
+        // Cách 2: Đọc file kernel hệ thống (Đặc trị 100% cho TV Box, Smart TV chip Amlogic/Rockchip/Allwinner)
+        val sysEthMac = getMacFromSysFile("eth0") ?: getMacFromSysFile("wlan0")
+        if (!sysEthMac.isNullOrBlank() && isValidMac(sysEthMac)) {
+            Log.d(TAG, "Đã đọc thành công MAC từ sysfs: $sysEthMac")
+            return sysEthMac
+        }
+
+        // Cách 3: Định danh phần cứng chính thức của Google (ANDROID_ID)
         try {
             val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
             if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {
@@ -80,5 +87,18 @@ object DeviceIdentifierHelper {
         if (mac == "00:00:00:00:00:00") return false
         val parts = mac.split(":")
         return parts.size == 6
+    }
+
+    private fun getMacFromSysFile(interfaceName: String): String? {
+        return try {
+            val file = java.io.File("/sys/class/net/$interfaceName/address")
+            if (file.exists() && file.canRead()) {
+                file.readText().trim().uppercase(Locale.ROOT)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 }

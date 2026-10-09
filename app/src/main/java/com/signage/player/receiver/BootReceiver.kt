@@ -14,10 +14,9 @@ import com.signage.player.ui.MainActivity
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        // Hỗ trợ cả sự kiện khởi động chuẩn của Android và sự kiện QuickBoot của một số dòng chip TV Box
+        // Hỗ trợ sự kiện khởi động chuẩn của Android và sự kiện QuickBoot của một số TV Box
         val isBootEvent = intent.action == Intent.ACTION_BOOT_COMPLETED ||
-                intent.action == "android.intent.action.QUICKBOOT_POWERON" ||
-                intent.action == "com.htc.intent.action.QUICKBOOT_POWERON"
+                intent.action == "android.intent.action.QUICKBOOT_POWERON"
 
         if (isBootEvent) {
             val prefs = PreferencesManager(context)

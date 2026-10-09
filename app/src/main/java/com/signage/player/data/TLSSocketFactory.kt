@@ -77,9 +77,9 @@ class TLSSocketFactory : SSLSocketFactory() {
                     }
 
                     val cs = ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
-                        .tlsVersions(TlsVersion.TLS_1_2, TlsVersion.TLS_1_1, TlsVersion.TLS_1_0)
+                        .tlsVersions(TlsVersion.TLS_1_2)
                         .build()
-                    builder.connectionSpecs(listOf(cs, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
+                    builder.connectionSpecs(listOf(cs, ConnectionSpec.CLEARTEXT))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }

@@ -1,8 +1,6 @@
 package com.signage.player.data
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.net.wifi.WifiManager
 import android.provider.Settings
 import android.util.Log
 import java.net.NetworkInterface
@@ -62,21 +60,7 @@ object DeviceIdentifierHelper {
             Log.w(TAG, "Lỗi khi quét NetworkInterface: ${e.message}")
         }
 
-        // Cách 2: WifiManager (Dành riêng cho Android 4.3 / 4.4 / 5.x)
-        try {
-            @SuppressLint("WifiManagerPotentialLeak", "HardwareIds")
-            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            val wifiInfo = wifiManager?.connectionInfo
-            val mac = wifiInfo?.macAddress?.uppercase(Locale.ROOT)
-            if (!mac.isNullOrBlank() && isValidMac(mac)) {
-                Log.d(TAG, "Đã đọc thành công MAC từ WifiManager: $mac")
-                return mac
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Lỗi khi đọc WifiManager: ${e.message}")
-        }
-
-        // Cách 3: Dự phòng bằng ANDROID_ID phần cứng
+        // Cách 2: Định danh phần cứng chính thức của Google (ANDROID_ID)
         try {
             val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
             if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {

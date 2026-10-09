@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var restApiManager: RestApiSyncManager
 
     private var downloadJob: Job? = null
+    private var currentDownloadToken: Long = 0L
     private var settingsDialog: Dialog? = null
     private var dialogBinding: DialogSettingsBinding? = null
 
@@ -247,11 +248,19 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         setupFullscreenMode()
+        val savedPos = prefs.lastPlaybackPosition
+        if (savedPos > 0) {
+            playerManager.restorePlaybackPosition(savedPos)
+        }
         playerManager.resume()
     }
 
     override fun onPause() {
         super.onPause()
+        val currentPos = playerManager.getCurrentPosition()
+        if (currentPos > 0) {
+            prefs.lastPlaybackPosition = currentPos
+        }
         playerManager.pause()
     }
 
@@ -318,7 +327,11 @@ class MainActivity : AppCompatActivity() {
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
             binding.downloadOverlay.visibility = View.GONE
             binding.tvOfflineBadge.visibility = View.VISIBLE
-            playerManager.playVideoFile(cachedFile)
+            val savedPos = prefs.lastPlaybackPosition
+            if (savedPos > 0) {
+                playerManager.restorePlaybackPosition(savedPos)
+            }
+            playerManager.playVideoFile(cachedFile, keepPosition = true)
             // Đã có video đầy đủ -> Phát ngay lập tức, KHÔNG tải lại để tránh tốn băng thông và đầy bộ nhớ!
             return
         }
@@ -329,14 +342,18 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Tải video với cơ chế cập nhật trạng thái rõ ràng:
-     * - Khi đổi link video: hiển thị thanh tải video.
+     * - Khi đổi link video: hiển thị thanh tải video mượt mà, không giật số nhảy bất thường.
      * - Video cũ (nếu có) vẫn tiếp tục phát trong khi tải video mới.
      * - Cho phép bấm nút 'X' hoặc chạm ra ngoài để ẩn giao diện tải/báo lỗi.
      * - Tải thành công: video cũ tự động xóa, video mới được phát.
      * - Mất mạng: tạm ngừng tải, video cũ vẫn chạy bình thường, không bị xóa.
      */
     private fun startDownloadAndPlay(url: String, retryCount: Int = 0, keepOverlayHidden: Boolean = false) {
+        downloader.cancelActiveDownload()
         downloadJob?.cancel()
+        val thisToken = ++currentDownloadToken
+        var lastUiProgress = -1
+
         downloadJob = lifecycleScope.launch {
             // Xác định video cũ đang phát hoặc đã lưu sẵn trong máy
             val existingVideo = playerManager.currentPlayingFile
@@ -345,7 +362,7 @@ class MainActivity : AppCompatActivity() {
 
             // 1. Video cũ vẫn phải chạy bình thường trong khi đang tải video mới
             if (hasPlayingVideo && !playerManager.isPlaying()) {
-                playerManager.playVideoFile(existingVideo!!)
+                playerManager.playVideoFile(existingVideo!!, keepPosition = true)
             }
 
             // 2. Hiển thị thanh tiến trình tải video (nếu người dùng chưa chủ động ẩn)
@@ -362,10 +379,15 @@ class MainActivity : AppCompatActivity() {
             // 3. Tải video mới vào file độc lập
             val result = downloader.downloadMedia(url, existingVideo) { progress, bytesRead, _ ->
                 runOnUiThread {
+                    if (thisToken != currentDownloadToken) return@runOnUiThread
+
                     if (progress >= 0) {
-                        binding.progressBar.isIndeterminate = false
-                        binding.progressBar.progress = progress
-                        binding.tvDownloadPercent.text = "$progress%"
+                        if (progress >= lastUiProgress || lastUiProgress == -1) {
+                            lastUiProgress = progress
+                            binding.progressBar.isIndeterminate = false
+                            binding.progressBar.progress = progress
+                            binding.tvDownloadPercent.text = "$progress%"
+                        }
                     } else {
                         binding.progressBar.isIndeterminate = true
                         val mb = bytesRead / (1024 * 1024)
@@ -375,17 +397,20 @@ class MainActivity : AppCompatActivity() {
             }
 
             result.onSuccess { downloadedFile ->
+                if (thisToken != currentDownloadToken) return@launch
                 binding.downloadOverlay.visibility = View.GONE
                 binding.tvOfflineBadge.visibility = View.GONE
-                // Nạp video mới vào phát (Video cũ sẽ được xóa tự động trong onVideoPlayStarted khi video mới phát thành công)
-                playerManager.playVideoFile(downloadedFile)
+                // Đổi sang video mới thì reset vị trí phát về đầu
+                prefs.lastPlaybackPosition = 0
+                playerManager.playVideoFile(downloadedFile, keepPosition = false)
             }.onFailure { error ->
+                if (thisToken != currentDownloadToken) return@launch
                 val errorMsg = error.localizedMessage ?: "Lỗi kết nối tải video"
                 Log.w("MainActivity", "Tải video thất bại: $errorMsg")
 
                 // Video cũ nếu có thì vẫn tiếp tục phát bình thường, không bị xóa
                 if (hasPlayingVideo && !playerManager.isPlaying()) {
-                    playerManager.playVideoFile(existingVideo!!)
+                    playerManager.playVideoFile(existingVideo!!, keepPosition = true)
                 }
 
                 // Hiển thị thông báo tạm ngừng tải, cho phép bấm X hoặc chạm ngoài để ẩn

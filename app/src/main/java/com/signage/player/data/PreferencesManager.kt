@@ -31,6 +31,7 @@ class PreferencesManager(private val context: Context) {
         private const val KEY_MEDIA_URL = "key_media_url"
         private const val KEY_AUTO_BOOT = "key_auto_boot"
         private const val KEY_LAST_CACHED_FILE = "key_last_cached_file"
+        private const val KEY_LAST_PLAYBACK_POS = "key_last_playback_pos"
         private const val KEY_HIDE_NETWORK_ERRORS = "key_hide_network_errors"
 
         // Cấu hình MQTT Server
@@ -72,6 +73,13 @@ class PreferencesManager(private val context: Context) {
     var lastCachedFilePath: String?
         get() = prefs.getString(KEY_LAST_CACHED_FILE, null)
         set(value) = prefs.edit().putString(KEY_LAST_CACHED_FILE, value).apply()
+
+    /**
+     * Thời điểm (miligiây) của video đang phát trước khi tạm dừng hoặc thoát ứng dụng.
+     */
+    var lastPlaybackPosition: Int
+        get() = prefs.getInt(KEY_LAST_PLAYBACK_POS, 0)
+        set(value) = prefs.edit().putInt(KEY_LAST_PLAYBACK_POS, value.coerceAtLeast(0)).apply()
 
     /**
      * Cho phép tắt thông báo lỗi kết nối mạng trên màn hình.
@@ -157,6 +165,7 @@ class PreferencesManager(private val context: Context) {
     fun clearCacheInfo() {
         prefs.edit()
             .remove(KEY_LAST_CACHED_FILE)
+            .remove(KEY_LAST_PLAYBACK_POS)
             .apply()
     }
 }

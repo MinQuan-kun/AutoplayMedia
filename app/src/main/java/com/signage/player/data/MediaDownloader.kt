@@ -3,12 +3,15 @@ package com.signage.player.data
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.security.MessageDigest
@@ -31,6 +34,19 @@ class MediaDownloader(private val context: Context) {
     companion object {
         private const val TAG = "MediaDownloader"
         private const val MIN_FREE_SPACE_BYTES = 50L * 1024 * 1024 // Tối thiểu phải còn 50MB trống
+    }
+
+    @Volatile
+    private var activeCall: Call? = null
+
+    /**
+     * Hủy lập tức socket tải đang chạy ngầm để không bị xung đột tiến trình.
+     */
+    fun cancelActiveDownload() {
+        try {
+            activeCall?.cancel()
+            activeCall = null
+        } catch (_: Exception) {}
     }
 
     private val client: OkHttpClient = TLSSocketFactory.enableTls12OnPreLollipop(
@@ -165,7 +181,10 @@ class MediaDownloader(private val context: Context) {
                 .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/109.0 Firefox/119.0")
                 .build()
 
-            val response = client.newCall(request).execute()
+            cancelActiveDownload()
+            val call = client.newCall(request)
+            activeCall = call
+            val response = call.execute()
 
             // 6. Kiểm tra mã phản hồi HTTP
             if (!response.isSuccessful) {
@@ -226,19 +245,33 @@ class MediaDownloader(private val context: Context) {
                 inputStream = body.byteStream()
                 outputStream = FileOutputStream(temp)
 
-                val buffer = ByteArray(8 * 1024)
+                val buffer = ByteArray(32 * 1024)
                 var bytesReadTotal: Long = 0
+                var lastReportedProgress = -1
+                var lastReportTimeMs = 0L
                 var read: Int
 
                 while (inputStream.read(buffer).also { read = it } != -1) {
+                    if (!coroutineContext.isActive) {
+                        throw InterruptedIOException("Tải video đã bị hủy")
+                    }
+
                     outputStream.write(buffer, 0, read)
                     bytesReadTotal += read
 
+                    val now = System.currentTimeMillis()
                     if (contentLength > 0) {
                         val progress = ((bytesReadTotal * 100) / contentLength).toInt().coerceIn(0, 100)
-                        onProgress(progress, bytesReadTotal, contentLength)
+                        if ((progress != lastReportedProgress && now - lastReportTimeMs >= 100) || progress == 100) {
+                            lastReportedProgress = progress
+                            lastReportTimeMs = now
+                            onProgress(progress, bytesReadTotal, contentLength)
+                        }
                     } else {
-                        onProgress(-1, bytesReadTotal, -1)
+                        if (now - lastReportTimeMs >= 200) {
+                            lastReportTimeMs = now
+                            onProgress(-1, bytesReadTotal, -1)
+                        }
                     }
                 }
 
@@ -247,6 +280,7 @@ class MediaDownloader(private val context: Context) {
                 outputStream?.close()
                 inputStream?.close()
                 response.close()
+                activeCall = null
             }
 
             // 10. Đổi tên nguyên tử thành công
@@ -268,11 +302,14 @@ class MediaDownloader(private val context: Context) {
             return@withContext Result.failure(Exception("Không có kết nối Internet hoặc tên miền không tồn tại"))
         } catch (e: SocketTimeoutException) {
             return@withContext Result.failure(Exception("Kết nối quá thời gian chờ (Timeout). Vui lòng thử lại với mạng ổn định hơn"))
+        } catch (e: InterruptedIOException) {
+            return@withContext Result.failure(Exception("Tạm dừng tải video do ngắt kết nối hoặc đổi lệnh"))
         } catch (t: Throwable) {
             // Bắt mọi lỗi kể cả OutOfMemoryError để không bao giờ văng ứng dụng
             Log.e(TAG, "Lỗi nghiêm trọng khi tải video: ${t.message}", t)
             return@withContext Result.failure(Exception("Lỗi tải video: ${t.localizedMessage ?: "Không xác định"}"))
         } finally {
+            activeCall = null
             // QUAN TRỌNG NHẤT: Nếu tải thất bại hoặc bị ngắt ngang, XÓA NGAY LẬP TỨC file .download dở dang!
             if (!isDownloadSuccessful && tempFile != null && tempFile.exists()) {
                 try {

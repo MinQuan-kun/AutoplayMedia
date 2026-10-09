@@ -13,6 +13,8 @@ import java.io.File
  * - Hỗ trợ mọi phiên bản Android từ 4.3 (Jelly Bean) đến Android 15.
  * - Giải mã phần cứng VPU trực tiếp, cực nhẹ, không ngốn RAM.
  * - Tự động lặp lại liên tục 24/7.
+ * - Tự động ghi nhớ thời điểm video đang phát dở khi thoát/tắt app để phát tiếp tục
+ *   mà không bao giờ bị chạy lại từ đầu.
  * - Tự động điều chỉnh kích thước hiển thị theo tỷ lệ màn hình (Fit, Fill, Stretch).
  */
 class SignagePlayerManager(
@@ -29,6 +31,24 @@ class SignagePlayerManager(
         get() = currentFile ?: lastKnownGoodFile
 
     var onVideoPlayStarted: ((File) -> Unit)? = null
+
+    // Ghi nhớ khoảnh khắc chính xác (miligiây) của video để tiếp tục phát
+    private var savedPosition: Int = 0
+
+    fun getCurrentPosition(): Int {
+        return try {
+            val pos = videoView.currentPosition
+            if (pos > 0) pos else savedPosition
+        } catch (_: Exception) {
+            savedPosition
+        }
+    }
+
+    fun restorePlaybackPosition(pos: Int) {
+        if (pos > 0) {
+            savedPosition = pos
+        }
+    }
 
     fun isPlaying(): Boolean {
         return try {
@@ -49,7 +69,13 @@ class SignagePlayerManager(
                 resume()
             }
             override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
-            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {}
+            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                // Khi bề mặt bị hủy (thoát ra ngoài), lưu ngay vị trí phát
+                try {
+                    val pos = videoView.currentPosition
+                    if (pos > 0) savedPosition = pos
+                } catch (_: Exception) {}
+            }
         })
 
         videoView.setOnPreparedListener { mp ->
@@ -61,6 +87,11 @@ class SignagePlayerManager(
             val h = mp.videoHeight
             if (w > 0 && h > 0) {
                 videoView.setVideoSize(w, h)
+            }
+
+            // Khôi phục chính xác thời điểm video đang phát dở trước khi thoát app
+            if (savedPosition > 0) {
+                videoView.seekTo(savedPosition)
             }
 
             videoView.start()
@@ -76,7 +107,8 @@ class SignagePlayerManager(
         }
 
         videoView.setOnCompletionListener {
-            // Dự phòng nếu hệ điều hành của một số TV đời cũ không tự bắt cờ looping
+            // Khi video kết thúc 1 vòng lặp bình thường, reset về đầu để vòng lặp mới tiếp tục
+            savedPosition = 0
             if (currentFile != null && currentFile!!.exists()) {
                 videoView.start()
             }
@@ -95,10 +127,9 @@ class SignagePlayerManager(
             if (fallback != null && fallback.exists() && fallback.absolutePath != failedFile?.absolutePath) {
                 onError("$baseMsg Đang tự động khôi phục video dự phòng gần nhất...")
                 try {
-                    // Xóa video mới bị lỗi codec để không bị kẹt lặp lại
                     failedFile?.delete()
                 } catch (_: Exception) {}
-                playVideoFile(fallback)
+                playVideoFile(fallback, keepPosition = false)
             } else {
                 onError("$baseMsg Vui lòng kiểm tra định dạng video.")
             }
@@ -108,8 +139,12 @@ class SignagePlayerManager(
 
     /**
      * Nạp và phát file video nội bộ đã được lưu trong bộ nhớ máy.
+     * @param keepPosition nếu true sẽ tiếp tục phát tại vị trí trước đó, false sẽ phát từ đầu.
      */
-    fun playVideoFile(file: File) {
+    fun playVideoFile(file: File, keepPosition: Boolean = false) {
+        if (!keepPosition && currentFile?.absolutePath != file.absolutePath) {
+            savedPosition = 0
+        }
         currentFile = file
         videoView.visibility = View.VISIBLE
         val uri = Uri.fromFile(file)
@@ -118,10 +153,14 @@ class SignagePlayerManager(
     }
 
     /**
-     * Tạm dừng khi chuyển sang màn hình khác.
+     * Tạm dừng khi chuyển sang màn hình khác và lưu lại khoảnh khắc phát.
      */
     fun pause() {
         try {
+            val pos = try { videoView.currentPosition } catch (_: Exception) { 0 }
+            if (pos > 0) {
+                savedPosition = pos
+            }
             if (videoView.isPlaying) {
                 videoView.pause()
             }
@@ -131,12 +170,23 @@ class SignagePlayerManager(
     }
 
     /**
-     * Tiếp tục phát khi quay trở lại ứng dụng.
+     * Tiếp tục phát khi quay trở lại ứng dụng đúng khoảnh khắc đã tạm dừng.
      */
     fun resume() {
         try {
-            if (!videoView.isPlaying && currentFile != null && currentFile!!.exists()) {
-                videoView.start()
+            if (currentFile != null && currentFile!!.exists()) {
+                if (!videoView.isPlaying) {
+                    val pos = try { videoView.currentPosition } catch (_: Exception) { 0 }
+                    if (pos <= 0 && savedPosition > 0) {
+                        val uri = Uri.fromFile(currentFile)
+                        videoView.setVideoURI(uri)
+                    } else {
+                        if (savedPosition > 0) {
+                            videoView.seekTo(savedPosition)
+                        }
+                        videoView.start()
+                    }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()

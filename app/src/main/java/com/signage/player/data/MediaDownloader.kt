@@ -79,18 +79,20 @@ class MediaDownloader(private val context: Context) {
      * Tự động xóa các video cũ, CHỈ GIỮ LẠI DUY NHẤT file video đang chạy hiện tại.
      * Ngăn chặn tình trạng đổi nhiều video làm phình to dung lượng ứng dụng theo thời gian.
      */
-    fun purgeOldVideosExcept(activeFile: File?) {
+    fun purgeOldVideosExcept(activeFile: File?, fallbackFile: File? = null) {
         try {
             var deletedCount = 0
             mediaDir.listFiles()?.forEach { file ->
                 if (file.isFile && !file.name.endsWith(".download")) {
-                    if (activeFile == null || file.absolutePath != activeFile.absolutePath) {
+                    val isActive = activeFile != null && file.absolutePath == activeFile.absolutePath
+                    val isFallback = fallbackFile != null && file.absolutePath == fallbackFile.absolutePath
+                    if (!isActive && !isFallback) {
                         if (file.delete()) deletedCount++
                     }
                 }
             }
             if (deletedCount > 0) {
-                Log.d(TAG, "Đã dọn sạch $deletedCount video cũ để tối ưu dung lượng bộ nhớ")
+                Log.d(TAG, "Đã dọn sạch $deletedCount video cũ để tối ưu dung lượng bộ nhớ (vẫn giữ bản dự phòng an toàn)")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi khi dọn video cũ: ${e.message}")
@@ -123,6 +125,7 @@ class MediaDownloader(private val context: Context) {
      */
     suspend fun downloadMedia(
         rawUrl: String,
+        fallbackFile: File? = null,
         onProgress: (progress: Int, bytesRead: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         var tempFile: File? = null
@@ -252,8 +255,8 @@ class MediaDownloader(private val context: Context) {
                 val success = temp.renameTo(targetFile)
                 if (success && targetFile.exists()) {
                     isDownloadSuccessful = true
-                    // Dọn dẹp tất cả các video cũ trước đó, chỉ giữ lại file mới tải
-                    purgeOldVideosExcept(targetFile)
+                    // Dọn dẹp tất cả các video cũ trước đó, giữ lại file mới và file dự phòng an toàn
+                    purgeOldVideosExcept(targetFile, fallbackFile)
                     return@withContext Result.success(targetFile)
                 } else {
                     return@withContext Result.failure(Exception("Không thể ghi file video vào bộ nhớ hệ thống"))

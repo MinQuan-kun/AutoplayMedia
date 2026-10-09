@@ -22,12 +22,23 @@ class SignagePlayerManager(
 
     private var mediaPlayer: MediaPlayer? = null
     private var currentFile: File? = null
+    var lastKnownGoodFile: File? = null
+        private set
 
     init {
         setupListeners()
     }
 
     private fun setupListeners() {
+        // Tự động khôi phục luồng phát khi cắm lại dây HDMI hoặc bật lại màn hình TV (SurfaceCreated)
+        videoView.holder.addCallback(object : android.view.SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+                resume()
+            }
+            override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
+            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {}
+        })
+
         videoView.setOnPreparedListener { mp ->
             mediaPlayer = mp
             mp.isLooping = true // Lặp vô tận 24/7
@@ -40,6 +51,13 @@ class SignagePlayerManager(
             }
 
             videoView.start()
+
+            // Ghi nhận file này phát thành công 100% làm bản dự phòng an toàn
+            currentFile?.let {
+                if (it.exists() && it.length() > 0) {
+                    lastKnownGoodFile = it
+                }
+            }
         }
 
         videoView.setOnCompletionListener {
@@ -50,12 +68,26 @@ class SignagePlayerManager(
         }
 
         videoView.setOnErrorListener { _, what, extra ->
-            val msg = when (what) {
+            val failedFile = currentFile
+            val fallback = lastKnownGoodFile
+
+            val baseMsg = when (what) {
                 MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "Bộ giải mã đa phương tiện hệ thống khởi động lại"
-                else -> "Lỗi giải mã video (Mã lỗi: $what, Chi tiết: $extra). Vui lòng kiểm tra định dạng video."
+                else -> "Lỗi giải mã video (Mã lỗi: $what, Chi tiết: $extra)."
             }
-            onError(msg)
-            true // Đã bắt lỗi, ngăn Android hiện popup lỗi crash khó chịu
+
+            // Cơ chế FALLBACK: Nếu video mới bị lỗi định dạng nhưng trong máy có video cũ chạy tốt
+            if (fallback != null && fallback.exists() && fallback.absolutePath != failedFile?.absolutePath) {
+                onError("$baseMsg Đang tự động khôi phục video dự phòng gần nhất...")
+                try {
+                    // Xóa video mới bị lỗi codec để không bị kẹt lặp lại
+                    failedFile?.delete()
+                } catch (_: Exception) {}
+                playVideoFile(fallback)
+            } else {
+                onError("$baseMsg Vui lòng kiểm tra định dạng video.")
+            }
+            true // Đã bắt lỗi an toàn, không để Android hiện popup văng app
         }
     }
 

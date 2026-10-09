@@ -21,7 +21,13 @@ import com.signage.player.databinding.DialogSettingsBinding
 import com.signage.player.mqtt.MqttSignageManager
 import com.signage.player.player.SignagePlayerManager
 import com.signage.player.server.RestApiSyncManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.util.Log
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -56,6 +62,16 @@ class MainActivity : AppCompatActivity() {
     private var isMqttConnected: Boolean = false
     private var mqttStatusMessage: String = "Đang kết nối..."
     private var restApiStatusMessage: String = "Chưa kiểm tra"
+
+    // Bộ lắng nghe sự kiện màn hình TV bật lại sau khi tắt để tự động phát tiếp
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_ON) {
+                setupFullscreenMode()
+                playerManager.resume()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,6 +114,11 @@ class MainActivity : AppCompatActivity() {
             showSettingsDialog()
             true
         }
+
+        // Đăng ký lắng nghe sự kiện màn hình TV bật lại
+        try {
+            registerReceiver(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_ON))
+        } catch (_: Exception) {}
 
         // Bắt đầu áp dụng phương thức kết nối đã lưu và phát nội dung
         applyCurrentSyncMode()
@@ -203,6 +224,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(screenReceiver)
+        } catch (_: Exception) {}
         downloadJob?.cancel()
         playerManager.release()
         mqttManager.disconnect()
@@ -267,33 +291,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Tải video ngầm bằng OkHttp và bắt đầu phát lặp.
+     * Tải video ngầm với cơ chế tự động thử lại (Auto-Retry) khi rớt mạng.
+     * Nếu máy đã có video đang chạy -> tiếp tục phát êm ái ngầm mà không che màn hình!
      */
-    private fun startDownloadAndPlay(url: String) {
+    private fun startDownloadAndPlay(url: String, retryCount: Int = 0) {
         downloadJob?.cancel()
         downloadJob = lifecycleScope.launch {
             val cachedFile = downloader.getCachedFileForUrl(url)
-            val hasExistingCache = cachedFile != null
+            val fallbackFile = playerManager.lastKnownGoodFile ?: cachedFile
+            val hasPlayingVideo = fallbackFile != null && fallbackFile.exists()
 
-            if (!hasExistingCache) {
+            // Chỉ hiện màn hình chờ xám nếu máy CHƯA CÓ video nào đang chạy
+            if (!hasPlayingVideo) {
                 binding.downloadOverlay.visibility = View.VISIBLE
                 binding.btnOverlaySettings.visibility = View.GONE
                 binding.progressBar.visibility = View.VISIBLE
                 binding.progressBar.isIndeterminate = false
                 binding.progressBar.progress = 0
-                binding.tvStatus.text = getString(R.string.status_downloading)
+                binding.tvStatus.text = if (retryCount > 0) "Đang thử tải lại (Lần $retryCount)..." else getString(R.string.status_downloading)
                 binding.tvDownloadPercent.text = "0%"
+            } else {
+                // Đang có video chạy -> Phát video dự phòng ngầm, không che màn hình
+                binding.tvOfflineBadge.visibility = View.VISIBLE
             }
 
-            val result = downloader.downloadMedia(url) { progress, bytesRead, _ ->
+            val result = downloader.downloadMedia(url, fallbackFile) { progress, bytesRead, _ ->
                 runOnUiThread {
-                    if (progress >= 0) {
-                        binding.progressBar.progress = progress
-                        binding.tvDownloadPercent.text = "$progress%"
-                    } else {
-                        binding.progressBar.isIndeterminate = true
-                        val mb = bytesRead / (1024 * 1024)
-                        binding.tvDownloadPercent.text = "$mb MB"
+                    if (!hasPlayingVideo) {
+                        if (progress >= 0) {
+                            binding.progressBar.progress = progress
+                            binding.tvDownloadPercent.text = "$progress%"
+                        } else {
+                            binding.progressBar.isIndeterminate = true
+                            val mb = bytesRead / (1024 * 1024)
+                            binding.tvDownloadPercent.text = "$mb MB"
+                        }
                     }
                 }
             }
@@ -306,16 +338,34 @@ class MainActivity : AppCompatActivity() {
                 playerManager.playVideoFile(downloadedFile)
             }.onFailure { error ->
                 val errorMsg = error.localizedMessage ?: "Lỗi kết nối tải video"
-                if (hasExistingCache) {
+                val nextDelaySec = when {
+                    retryCount < 2 -> 15
+                    retryCount < 5 -> 30
+                    else -> 60
+                }
+
+                if (hasPlayingVideo) {
                     binding.tvOfflineBadge.visibility = View.VISIBLE
-                    Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
+                    Log.w("MainActivity", "Tải video mới thất bại ($errorMsg). Sẽ tự động thử lại sau ${nextDelaySec}s...")
+                    // Chờ và tự động thử lại trong nền mà không làm gián đoạn video đang chiếu
+                    delay(nextDelaySec * 1000L)
+                    if (prefs.mediaUrl == url) {
+                        startDownloadAndPlay(url, retryCount + 1)
+                    }
                 } else {
+                    // Chưa có video nào -> Đếm ngược trên màn hình chờ và tự thử lại
                     binding.downloadOverlay.visibility = View.VISIBLE
                     binding.progressBar.visibility = View.GONE
-                    binding.tvStatus.text = "Không Thể Tải Video"
-                    binding.tvDownloadPercent.text = errorMsg
                     binding.btnOverlaySettings.visibility = View.VISIBLE
-                    binding.btnOverlaySettings.requestFocus()
+
+                    for (sec in nextDelaySec downTo 1) {
+                        binding.tvStatus.text = "Mất kết nối mạng (Lỗi: $errorMsg)"
+                        binding.tvDownloadPercent.text = "Sẽ tự động thử lại sau ${sec}s..."
+                        delay(1000L)
+                        if (prefs.mediaUrl != url) return@launch
+                    }
+
+                    startDownloadAndPlay(url, retryCount + 1)
                 }
             }
         }

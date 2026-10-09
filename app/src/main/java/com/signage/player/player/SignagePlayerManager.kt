@@ -25,6 +25,19 @@ class SignagePlayerManager(
     var lastKnownGoodFile: File? = null
         private set
 
+    val currentPlayingFile: File?
+        get() = currentFile ?: lastKnownGoodFile
+
+    var onVideoPlayStarted: ((File) -> Unit)? = null
+
+    fun isPlaying(): Boolean {
+        return try {
+            videoView.isPlaying
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     init {
         setupListeners()
     }
@@ -56,6 +69,8 @@ class SignagePlayerManager(
             currentFile?.let {
                 if (it.exists() && it.length() > 0) {
                     lastKnownGoodFile = it
+                    // Báo hiệu video mới đã phát thành công trên màn hình -> an tâm dọn dẹp video cũ
+                    onVideoPlayStarted?.invoke(it)
                 }
             }
         }

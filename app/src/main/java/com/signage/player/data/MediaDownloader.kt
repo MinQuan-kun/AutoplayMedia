@@ -255,8 +255,7 @@ class MediaDownloader(private val context: Context) {
                 val success = temp.renameTo(targetFile)
                 if (success && targetFile.exists()) {
                     isDownloadSuccessful = true
-                    // Dọn dẹp tất cả các video cũ trước đó, giữ lại file mới và file dự phòng an toàn
-                    purgeOldVideosExcept(targetFile, fallbackFile)
+                    // Giữ nguyên toàn bộ video cũ, CHỈ dọn dẹp khi video mới đã thực sự phát trên màn hình!
                     return@withContext Result.success(targetFile)
                 } else {
                     return@withContext Result.failure(Exception("Không thể ghi file video vào bộ nhớ hệ thống"))

@@ -31,6 +31,7 @@ class PreferencesManager(private val context: Context) {
         private const val KEY_MEDIA_URL = "key_media_url"
         private const val KEY_AUTO_BOOT = "key_auto_boot"
         private const val KEY_LAST_CACHED_FILE = "key_last_cached_file"
+        private const val KEY_HIDE_NETWORK_ERRORS = "key_hide_network_errors"
 
         // Cấu hình MQTT Server
         private const val KEY_MQTT_BROKER = "key_mqtt_broker"
@@ -71,6 +72,14 @@ class PreferencesManager(private val context: Context) {
     var lastCachedFilePath: String?
         get() = prefs.getString(KEY_LAST_CACHED_FILE, null)
         set(value) = prefs.edit().putString(KEY_LAST_CACHED_FILE, value).apply()
+
+    /**
+     * Cho phép tắt thông báo lỗi kết nối mạng trên màn hình.
+     * Mặc định là true (Tắt hoàn toàn để màn hình Kiosk chạy êm ái 24/7 không bị hiện thông báo lỗi).
+     */
+    var isHideNetworkErrorsEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_NETWORK_ERRORS, true)
+        set(value) = prefs.edit().putBoolean(KEY_HIDE_NETWORK_ERRORS, value).apply()
 
     // --------------------------------------------------------------------------
     // CẤU HÌNH TRƯỜNG HỢP 1: SERVER MQTT

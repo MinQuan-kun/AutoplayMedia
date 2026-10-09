@@ -299,6 +299,18 @@
                 android:inputType="textUri" />
         </LinearLayout>
 
+        <!-- TÙY CHỌN TẮT THÔNG BÁO LỖI MẠNG TRÊN MÀN HÌNH -->
+        <CheckBox
+            android:id="@+id/cbHideNetworkErrors"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tắt thông báo lỗi mạng trên màn hình (Chạy êm ái ngầm 24/7)"
+            android:textColor="@color/white"
+            android:textSize="13sp"
+            android:buttonTint="@color/accent_teal"
+            android:checked="true"
+            android:layout_marginBottom="14dp" />
+
         <!-- Xóa bộ nhớ đệm (Clear cache) -->
         <Button
             android:id="@+id/btnClearCache"

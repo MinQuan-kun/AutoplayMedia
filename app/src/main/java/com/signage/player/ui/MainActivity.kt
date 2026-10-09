@@ -93,10 +93,23 @@ class MainActivity : AppCompatActivity() {
             videoView = binding.videoView,
             onError = { errorMessage ->
                 runOnUiThread {
-                    Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
+                    if (!prefs.isHideNetworkErrorsEnabled) {
+                        Toast.makeText(this, errorMessage, Toast.LENGTH_LONG).show()
+                    } else {
+                        Log.w("MainActivity", errorMessage)
+                    }
                 }
             }
-        )
+        ).apply {
+            onVideoPlayStarted = { playingFile ->
+                // Video mới đã thực sự giải mã thành công và đang phát trên màn hình!
+                // Lúc này mới an tâm dọn dẹp các video cũ trước đó để giải phóng bộ nhớ!
+                downloader.purgeOldVideosExcept(playingFile)
+                prefs.lastCachedFilePath = playingFile.absolutePath
+                binding.downloadOverlay.visibility = View.GONE
+                binding.tvOfflineBadge.visibility = View.GONE
+            }
+        }
 
         // Khởi tạo 2 bộ kết nối Server
         initServerConnections()
@@ -297,12 +310,26 @@ class MainActivity : AppCompatActivity() {
     private fun startDownloadAndPlay(url: String, retryCount: Int = 0) {
         downloadJob?.cancel()
         downloadJob = lifecycleScope.launch {
-            val cachedFile = downloader.getCachedFileForUrl(url)
-            val fallbackFile = playerManager.lastKnownGoodFile ?: cachedFile
-            val hasPlayingVideo = fallbackFile != null && fallbackFile.exists()
+            // Xác định video cũ đang phát hoặc đã lưu sẵn trong máy
+            val existingVideo = playerManager.currentPlayingFile
+                ?: (prefs.lastCachedFilePath?.let { java.io.File(it) }?.takeIf { it.exists() && it.length() > 0 })
+            val hasPlayingVideo = existingVideo != null && existingVideo.exists()
 
-            // Chỉ hiện màn hình chờ xám nếu máy CHƯA CÓ video nào đang chạy
-            if (!hasPlayingVideo) {
+            if (hasPlayingVideo) {
+                // 1. Video cũ PHẢI TIẾP TỤC CHẠY (nếu đang dừng thì phát ngay)
+                if (!playerManager.isPlaying()) {
+                    playerManager.playVideoFile(existingVideo!!)
+                }
+                // 2. Ẩn hoàn toàn màn hình chờ tải để video cũ phát 100% êm ái
+                binding.downloadOverlay.visibility = View.GONE
+                // 3. Tắt huy hiệu offline nếu người dùng đã bật tùy chọn tắt thông báo
+                if (prefs.isHideNetworkErrorsEnabled) {
+                    binding.tvOfflineBadge.visibility = View.GONE
+                } else {
+                    binding.tvOfflineBadge.visibility = View.VISIBLE
+                }
+            } else {
+                // Chưa có video nào trong máy: Hiện màn hình chờ tải
                 binding.downloadOverlay.visibility = View.VISIBLE
                 binding.btnOverlaySettings.visibility = View.GONE
                 binding.progressBar.visibility = View.VISIBLE
@@ -310,12 +337,10 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.progress = 0
                 binding.tvStatus.text = if (retryCount > 0) "Đang thử tải lại (Lần $retryCount)..." else getString(R.string.status_downloading)
                 binding.tvDownloadPercent.text = "0%"
-            } else {
-                // Đang có video chạy -> Phát video dự phòng ngầm, không che màn hình
-                binding.tvOfflineBadge.visibility = View.VISIBLE
             }
 
-            val result = downloader.downloadMedia(url, fallbackFile) { progress, bytesRead, _ ->
+            // Tải video mới vào file riêng biệt, KHÔNG làm ảnh hưởng đến video cũ
+            val result = downloader.downloadMedia(url, existingVideo) { progress, bytesRead, _ ->
                 runOnUiThread {
                     if (!hasPlayingVideo) {
                         if (progress >= 0) {
@@ -333,8 +358,7 @@ class MainActivity : AppCompatActivity() {
             result.onSuccess { downloadedFile ->
                 binding.downloadOverlay.visibility = View.GONE
                 binding.tvOfflineBadge.visibility = View.GONE
-                prefs.lastCachedFilePath = downloadedFile.absolutePath
-
+                // Nạp video mới vào phát (Video cũ vẫn an toàn trong ổ cứng cho đến khi video mới phát thành công)
                 playerManager.playVideoFile(downloadedFile)
             }.onFailure { error ->
                 val errorMsg = error.localizedMessage ?: "Lỗi kết nối tải video"
@@ -345,15 +369,22 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (hasPlayingVideo) {
-                    binding.tvOfflineBadge.visibility = View.VISIBLE
-                    Log.w("MainActivity", "Tải video mới thất bại ($errorMsg). Sẽ tự động thử lại sau ${nextDelaySec}s...")
-                    // Chờ và tự động thử lại trong nền mà không làm gián đoạn video đang chiếu
+                    // Video cũ vẫn tiếp tục chạy 24/7 bình thường!
+                    // Hoàn toàn KHÔNG hiện bất kỳ bảng lỗi nào lên màn hình!
+                    if (prefs.isHideNetworkErrorsEnabled) {
+                        binding.tvOfflineBadge.visibility = View.GONE
+                    } else {
+                        binding.tvOfflineBadge.visibility = View.VISIBLE
+                    }
+                    Log.w("MainActivity", "Tải video mới thất bại ($errorMsg). Video cũ vẫn tiếp tục phát. Sẽ tự động thử lại sau ${nextDelaySec}s...")
+
+                    // Tự động thử lại ngầm trong nền mà không làm gián đoạn người xem
                     delay(nextDelaySec * 1000L)
                     if (prefs.mediaUrl == url) {
                         startDownloadAndPlay(url, retryCount + 1)
                     }
                 } else {
-                    // Chưa có video nào -> Đếm ngược trên màn hình chờ và tự thử lại
+                    // Chưa có video nào trong máy: Hiện đếm ngược tự thử lại
                     binding.downloadOverlay.visibility = View.VISIBLE
                     binding.progressBar.visibility = View.GONE
                     binding.btnOverlaySettings.visibility = View.VISIBLE
@@ -392,6 +423,7 @@ class MainActivity : AppCompatActivity() {
         dBinding.etApiInterval.setText(prefs.apiSyncIntervalMinutes.toString())
 
         dBinding.etDirectVideoUrl.setText(prefs.mediaUrl)
+        dBinding.cbHideNetworkErrors.isChecked = prefs.isHideNetworkErrorsEnabled
 
         // Hiển thị khung cấu hình tương ứng với chế độ đang lưu
         when (prefs.syncMode) {
@@ -497,6 +529,11 @@ class MainActivity : AppCompatActivity() {
                     prefs.mediaUrl = directUrl
                     startDownloadAndPlay(directUrl)
                 }
+            }
+
+            prefs.isHideNetworkErrorsEnabled = dBinding.cbHideNetworkErrors.isChecked
+            if (prefs.isHideNetworkErrorsEnabled) {
+                binding.tvOfflineBadge.visibility = View.GONE
             }
 
             // Kích hoạt chế độ mới

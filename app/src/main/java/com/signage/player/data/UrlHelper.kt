@@ -45,6 +45,32 @@ object UrlHelper {
     }
 
     /**
+     * Trích xuất ID file từ link Google Drive (nếu có).
+     */
+    fun extractGoogleDriveFileId(url: String): String? {
+        if (!isGoogleDrive(url)) return null
+        val matcher = GOOGLE_DRIVE_FILE_ID_PATTERN.matcher(url.trim())
+        if (matcher.find()) {
+            return matcher.group(1) ?: matcher.group(2)
+        }
+        return null
+    }
+
+    /**
+     * Chuẩn hóa URL thành khóa nhận diện duy nhất (Cache Key) để đối soát bộ nhớ đệm:
+     * - Với Google Drive: Nhận diện theo ID file (bất kể link view, link uc, tham số usp=sharing,...).
+     * - Với link khác: Chuẩn hóa bỏ query/hash nếu có đuôi file video, hoặc chuẩn hóa chuỗi.
+     */
+    fun getNormalizedCacheKey(rawUrl: String): String {
+        val trimmed = rawUrl.trim()
+        val gDriveId = extractGoogleDriveFileId(trimmed)
+        if (!gDriveId.isNullOrBlank()) {
+            return "gdrive_$gDriveId"
+        }
+        return cleanUrl(trimmed)
+    }
+
+    /**
      * Kiểm tra xem có phải link Dropbox không.
      */
     fun isDropbox(url: String): Boolean {
@@ -66,12 +92,9 @@ object UrlHelper {
 
         // 1. Chuyển đổi Google Drive
         if (isGoogleDrive(clean)) {
-            val matcher = GOOGLE_DRIVE_FILE_ID_PATTERN.matcher(clean)
-            if (matcher.find()) {
-                val fileId = matcher.group(1) ?: matcher.group(2)
-                if (!fileId.isNullOrBlank()) {
-                    return "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
-                }
+            val fileId = extractGoogleDriveFileId(clean)
+            if (!fileId.isNullOrBlank()) {
+                return "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
             }
         }
 
@@ -90,7 +113,7 @@ object UrlHelper {
     /**
      * Chuẩn hóa URL, loại bỏ query param và hash để phân tích phần mở rộng (extension).
      */
-    private fun cleanUrl(url: String): String {
+    fun cleanUrl(url: String): String {
         return url.lowercase(Locale.ROOT).split("?").first().split("#").first()
     }
 }

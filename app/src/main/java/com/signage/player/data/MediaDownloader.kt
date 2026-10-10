@@ -98,17 +98,20 @@ class MediaDownloader(private val context: Context) {
     fun purgeOldVideosExcept(activeFile: File?, fallbackFile: File? = null) {
         try {
             var deletedCount = 0
+            var freedBytes = 0L
             mediaDir.listFiles()?.forEach { file ->
-                if (file.isFile && !file.name.endsWith(".download")) {
+                if (file.isFile) {
                     val isActive = activeFile != null && file.absolutePath == activeFile.absolutePath
                     val isFallback = fallbackFile != null && file.absolutePath == fallbackFile.absolutePath
-                    if (!isActive && !isFallback) {
+                    val isActiveDownloading = file.name.endsWith(".download") && activeCall != null
+                    if (!isActive && !isFallback && !isActiveDownloading) {
+                        freedBytes += file.length()
                         if (file.delete()) deletedCount++
                     }
                 }
             }
             if (deletedCount > 0) {
-                Log.d(TAG, "Đã dọn sạch $deletedCount video cũ để tối ưu dung lượng bộ nhớ (vẫn giữ bản dự phòng an toàn)")
+                Log.d(TAG, "Đã dọn sạch $deletedCount video/tệp cũ, giải phóng ${freedBytes / (1024 * 1024)} MB")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Lỗi khi dọn video cũ: ${e.message}")
@@ -117,11 +120,24 @@ class MediaDownloader(private val context: Context) {
 
     /**
      * Kiểm tra xem video theo đường dẫn URL đã được tải hoàn tất trong máy chưa.
+     * Nhận diện thông minh theo tiền tố băm (Prefix Hash) bất kể phần mở rộng (.mp4, .mkv, .webm, .mov,...).
      */
     fun getCachedFileForUrl(url: String): File? {
         if (url.isBlank()) return null
-        val targetFile = File(mediaDir, generateFileName(url, null))
-        return if (targetFile.exists() && targetFile.length() > 0) targetFile else null
+        val normalizedKey = UrlHelper.getNormalizedCacheKey(url)
+        val hashNormalized = md5(normalizedKey).take(12)
+        val prefixNormalized = "signage_$hashNormalized"
+
+        // Khóa băm phụ tương thích ngược với các bản cũ (tính theo raw url)
+        val hashRaw = md5(url.trim()).take(12)
+        val prefixRaw = "signage_$hashRaw"
+
+        return mediaDir.listFiles()?.firstOrNull { file ->
+            file.isFile &&
+            !file.name.endsWith(".download") &&
+            file.length() > 0 &&
+            (file.name.startsWith(prefixNormalized) || file.name.startsWith(prefixRaw))
+        }
     }
 
     /**
@@ -129,6 +145,7 @@ class MediaDownloader(private val context: Context) {
      */
     fun clearAllCache(): Boolean {
         return try {
+            cancelActiveDownload()
             mediaDir.listFiles()?.forEach { it.delete() }
             true
         } catch (e: Exception) {
@@ -341,7 +358,8 @@ class MediaDownloader(private val context: Context) {
             }
         }
 
-        val hash = md5(url)
+        val normalizedKey = UrlHelper.getNormalizedCacheKey(url)
+        val hash = md5(normalizedKey)
         return "signage_${hash.take(12)}$ext"
     }
 

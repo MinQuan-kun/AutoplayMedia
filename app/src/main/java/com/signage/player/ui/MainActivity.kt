@@ -327,6 +327,8 @@ class MainActivity : AppCompatActivity() {
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
             binding.downloadOverlay.visibility = View.GONE
             binding.tvOfflineBadge.visibility = View.VISIBLE
+            prefs.lastCachedFilePath = cachedFile.absolutePath
+            downloader.purgeOldVideosExcept(cachedFile)
             val savedPos = prefs.lastPlaybackPosition
             if (savedPos > 0) {
                 playerManager.restorePlaybackPosition(savedPos)
@@ -349,6 +351,26 @@ class MainActivity : AppCompatActivity() {
      * - Mất mạng: tạm ngừng tải, video cũ vẫn chạy bình thường, không bị xóa.
      */
     private fun startDownloadAndPlay(url: String, retryCount: Int = 0, keepOverlayHidden: Boolean = false) {
+        // 0. KIỂM TRA BỘ NHỚ ĐỆM TRƯỚC TIÊN:
+        // Nếu video của link này đã tải hoàn chỉnh trong máy thì phát ngay, tuyệt đối không tải lại!
+        val cachedFile = downloader.getCachedFileForUrl(url)
+        if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
+            Log.d("MainActivity", "Video đã có sẵn trong bộ nhớ đệm: ${cachedFile.name}. Phát ngay lập tức, bỏ qua tải về.")
+            binding.downloadOverlay.visibility = View.GONE
+            binding.tvOfflineBadge.visibility = View.VISIBLE
+            prefs.lastCachedFilePath = cachedFile.absolutePath
+            downloader.purgeOldVideosExcept(cachedFile)
+
+            // Nếu đúng video này đang phát thì tiếp tục phát mượt mà, không ngắt quãng
+            if (playerManager.currentPlayingFile?.absolutePath == cachedFile.absolutePath && playerManager.isPlaying()) {
+                return
+            }
+
+            prefs.lastPlaybackPosition = 0
+            playerManager.playVideoFile(cachedFile, keepPosition = false)
+            return
+        }
+
         downloader.cancelActiveDownload()
         downloadJob?.cancel()
         val thisToken = ++currentDownloadToken
@@ -565,6 +587,10 @@ class MainActivity : AppCompatActivity() {
                         return@setOnClickListener
                     }
                     prefs.mediaUrl = directUrl
+                    val cached = downloader.getCachedFileForUrl(directUrl)
+                    if (cached != null && cached.exists() && cached.length() > 0) {
+                        Toast.makeText(this, "Video đã có sẵn trong máy! Đang phát...", Toast.LENGTH_SHORT).show()
+                    }
                     startDownloadAndPlay(directUrl)
                 }
             }

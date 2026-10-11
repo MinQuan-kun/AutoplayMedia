@@ -140,6 +140,12 @@ class MediaDownloader {
         try {
             cleanOrphanTempFiles()
 
+            // Nếu file của link này đã có và hợp lệ, trả về ngay lập tức, không tải mạng
+            val existingCache = getCachedFileForUrl(rawUrl)
+            if (existingCache != null && existingCache.exists() && existingCache.length() > 0 && isValidVideoFile(existingCache)) {
+                return@withContext Result.success(existingCache)
+            }
+
             val freeSpace = mediaDir.usableSpace
             if (freeSpace < MIN_FREE_SPACE_BYTES) {
                 return@withContext Result.failure(

@@ -17,17 +17,17 @@ import javafx.scene.input.KeyCode
 import javafx.scene.input.MouseButton
 import javafx.scene.layout.*
 import javafx.scene.paint.Color
+import javafx.animation.PauseTransition
 import javafx.stage.Modality
 import javafx.stage.Stage
 import javafx.stage.StageStyle
+import javafx.util.Duration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
-import java.util.Timer
-import java.util.TimerTask
 
 /**
  * Cửa sổ hiển thị chính Smart Signage trên Windows (Kiosk Fullscreen).
@@ -56,8 +56,10 @@ class SignageWindow(private val stage: Stage) {
     private var downloadJob: Job? = null
     private var retryJob: Job? = null
     private var currentDownloadToken = 0L
+    private var downloadRetryCount = 0
+    private val maxDownloadRetries = 3
 
-    private var mouseIdleTimer: Timer? = null
+    private var mouseIdleTransition: PauseTransition? = null
 
     // Thông tin trạng thái cho Dialog
     private var mqttStatusText = "Chưa kết nối"
@@ -208,15 +210,14 @@ class SignageWindow(private val stage: Stage) {
     }
 
     private fun resetMouseIdleTimer(scene: Scene) {
-        mouseIdleTimer?.cancel()
-        mouseIdleTimer = Timer().apply {
-            schedule(object : TimerTask() {
-                override fun run() {
-                    Platform.runLater {
-                        scene.cursor = Cursor.NONE
-                    }
+        mouseIdleTransition?.stop()
+        mouseIdleTransition = PauseTransition(Duration.seconds(3.0)).apply {
+            setOnFinished {
+                Platform.runLater {
+                    scene.cursor = Cursor.NONE
                 }
-            }, 3000L)
+            }
+            play()
         }
     }
 
@@ -238,14 +239,15 @@ class SignageWindow(private val stage: Stage) {
     }
 
     private fun handleRemoteVideoUpdate(source: String, newUrl: String) {
-        if (newUrl.isNotBlank() && newUrl != prefs.mediaUrl) {
-            prefs.mediaUrl = newUrl
-            startDownloadAndPlay(newUrl)
+        val trimmed = newUrl.trim()
+        if (trimmed.isNotBlank() && !UrlHelper.areUrlsEquivalent(trimmed, prefs.mediaUrl)) {
+            prefs.mediaUrl = trimmed
+            startDownloadAndPlay(trimmed)
         }
     }
 
     private fun checkAndStartContent() {
-        val currentUrl = prefs.mediaUrl
+        val currentUrl = prefs.mediaUrl.trim()
         if (currentUrl.isBlank()) {
             showSettingsDialog()
             return
@@ -265,6 +267,7 @@ class SignageWindow(private val stage: Stage) {
 
         val cachedFile = downloader.getCachedFileForUrl(currentUrl)
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
+            downloadRetryCount = 0
             offlineBadge.isVisible = true
             overlayPane.isVisible = false
             downloader.purgeOldVideosExcept(cachedFile)
@@ -277,8 +280,21 @@ class SignageWindow(private val stage: Stage) {
 
     private fun startDownloadAndPlay(url: String) {
         retryJob?.cancel()
+
+        // 1. Nếu video tương đương đang phát thì không làm gì cả
+        val playing = playerManager.currentPlayingFile
+        if (playing != null && playing.exists() && playerManager.isPlaying()) {
+            val cachedForUrl = downloader.getCachedFileForUrl(url)
+            if (cachedForUrl != null && cachedForUrl.absolutePath == playing.absolutePath) {
+                overlayPane.isVisible = false
+                return
+            }
+        }
+
+        // 2. Nếu đã có file trong bộ nhớ đệm thì phát luôn, không tải lại
         val cachedFile = downloader.getCachedFileForUrl(url)
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
+            downloadRetryCount = 0
             offlineBadge.isVisible = true
             overlayPane.isVisible = false
             downloader.purgeOldVideosExcept(cachedFile)
@@ -313,6 +329,7 @@ class SignageWindow(private val stage: Stage) {
             result.onSuccess { downloadedFile ->
                 Platform.runLater {
                     if (thisToken != currentDownloadToken) return@runLater
+                    downloadRetryCount = 0
                     retryJob?.cancel()
                     overlayPane.isVisible = false
                     offlineBadge.isVisible = false
@@ -321,17 +338,26 @@ class SignageWindow(private val stage: Stage) {
             }.onFailure { error ->
                 Platform.runLater {
                     if (thisToken != currentDownloadToken) return@runLater
-                    lblStatus.text = "Tải video bị gián đoạn"
-                    lblPercent.text = "${error.localizedMessage ?: "Mất kết nối mạng"}\nSẽ tự động tải lại từ đầu sau 8 giây..."
-                    progressBar.isVisible = false
-                }
-                retryJob?.cancel()
-                retryJob = scope.launch {
-                    delay(8000L)
-                    if (thisToken == currentDownloadToken) {
-                        Platform.runLater {
-                            startDownloadAndPlay(url)
+                    if (downloadRetryCount < maxDownloadRetries) {
+                        downloadRetryCount++
+                        val waitSec = downloadRetryCount * 5
+                        lblStatus.text = "Tải video gián đoạn (Lần $downloadRetryCount/$maxDownloadRetries)"
+                        lblPercent.text = "${error.localizedMessage ?: "Mất kết nối mạng"}\nSẽ tự động thử lại sau ${waitSec}s..."
+                        progressBar.isVisible = false
+
+                        retryJob?.cancel()
+                        retryJob = scope.launch {
+                            delay(waitSec * 1000L)
+                            if (thisToken == currentDownloadToken) {
+                                Platform.runLater {
+                                    startDownloadAndPlay(url)
+                                }
+                            }
                         }
+                    } else {
+                        lblStatus.text = "Tải video không thành công"
+                        lblPercent.text = "${error.localizedMessage ?: "Mất kết nối mạng"}\nVui lòng kiểm tra lại đường truyền hoặc link video."
+                        progressBar.isVisible = false
                     }
                 }
             }
@@ -476,6 +502,12 @@ class SignageWindow(private val stage: Stage) {
                     prefs.apiSyncIntervalMinutes = txtRestInterval.text.toIntOrNull() ?: 30
                 } else {
                     val directUrl = txtDirectUrl.text.trim()
+                    if (UrlHelper.areUrlsEquivalent(directUrl, prefs.mediaUrl) && playerManager.isPlaying()) {
+                        applyCurrentSyncMode()
+                        updateAutoStartRegistration()
+                        dialog.close()
+                        return@setOnAction
+                    }
                     prefs.mediaUrl = directUrl
                     startDownloadAndPlay(directUrl)
                 }

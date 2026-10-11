@@ -74,6 +74,23 @@ object UrlHelper {
     }
 
     fun cleanUrl(url: String): String {
-        return url.lowercase(Locale.ROOT).split("?").first().split("#").first()
+        val clean = url.trim().lowercase(Locale.ROOT)
+            .substringBefore('?')
+            .substringBefore('#')
+            .trimEnd('/')
+
+        // Chuẩn hóa link Pexels: cả link xem và link tải đều trích xuất ID video
+        val pexelsMatch = Regex("""pexels\.com/(?:[a-zA-Z-]+/)?(?:download/)?video/(\d+)""").find(clean)
+        if (pexelsMatch != null) {
+            return "pexels_${pexelsMatch.groupValues[1]}"
+        }
+
+        return clean
+    }
+
+    fun areUrlsEquivalent(url1: String, url2: String): Boolean {
+        if (url1.trim().equals(url2.trim(), ignoreCase = true)) return true
+        if (url1.isBlank() || url2.isBlank()) return false
+        return getNormalizedCacheKey(url1) == getNormalizedCacheKey(url2)
     }
 }

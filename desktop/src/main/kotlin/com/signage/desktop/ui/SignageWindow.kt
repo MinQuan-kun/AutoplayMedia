@@ -23,6 +23,7 @@ import javafx.stage.StageStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Timer
@@ -53,6 +54,7 @@ class SignageWindow(private val stage: Stage) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private var downloadJob: Job? = null
+    private var retryJob: Job? = null
     private var currentDownloadToken = 0L
 
     private var mouseIdleTimer: Timer? = null
@@ -274,6 +276,7 @@ class SignageWindow(private val stage: Stage) {
     }
 
     private fun startDownloadAndPlay(url: String) {
+        retryJob?.cancel()
         val cachedFile = downloader.getCachedFileForUrl(url)
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
             offlineBadge.isVisible = true
@@ -310,6 +313,7 @@ class SignageWindow(private val stage: Stage) {
             result.onSuccess { downloadedFile ->
                 Platform.runLater {
                     if (thisToken != currentDownloadToken) return@runLater
+                    retryJob?.cancel()
                     overlayPane.isVisible = false
                     offlineBadge.isVisible = false
                     playerManager.playVideoFile(downloadedFile)
@@ -317,9 +321,18 @@ class SignageWindow(private val stage: Stage) {
             }.onFailure { error ->
                 Platform.runLater {
                     if (thisToken != currentDownloadToken) return@runLater
-                    lblStatus.text = "Tải video thất bại"
-                    lblPercent.text = error.localizedMessage ?: "Lỗi kết nối mạng"
+                    lblStatus.text = "Tải video bị gián đoạn"
+                    lblPercent.text = "${error.localizedMessage ?: "Mất kết nối mạng"}\nSẽ tự động tải lại từ đầu sau 8 giây..."
                     progressBar.isVisible = false
+                }
+                retryJob?.cancel()
+                retryJob = scope.launch {
+                    delay(8000L)
+                    if (thisToken == currentDownloadToken) {
+                        Platform.runLater {
+                            startDownloadAndPlay(url)
+                        }
+                    }
                 }
             }
         }
@@ -423,10 +436,11 @@ class SignageWindow(private val stage: Stage) {
 
         toggleGroup.selectedToggleProperty().addListener { _, _, _ -> updateVisibility() }
 
-        // Checkbox tự khởi động cùng Windows
-        val chkAutoStart = CheckBox("Tự động mở toàn màn hình khi bật máy tính Windows").apply {
-            style = "-fx-text-fill: #81C784; -fx-font-weight: bold;"
-            isSelected = prefs.autoStartOnBoot
+        // Thông báo kết quả xóa cache hiển thị trực tiếp trong Dialog (tránh lỗi z-order cửa sổ)
+        val lblCacheStatus = Label("").apply {
+            style = "-fx-text-fill: #00E676; -fx-font-weight: bold; -fx-font-size: 13px;"
+            isVisible = false
+            isManaged = false
         }
 
         // Nút bấm
@@ -435,7 +449,9 @@ class SignageWindow(private val stage: Stage) {
             setOnAction {
                 downloader.clearAllCache()
                 prefs.clearCacheInfo()
-                Alert(Alert.AlertType.INFORMATION, "Đã dọn sạch toàn bộ video đệm trong máy!", ButtonType.OK).show()
+                lblCacheStatus.text = "✓ Đã dọn sạch toàn bộ video đệm và giải phóng dung lượng ổ đĩa!"
+                lblCacheStatus.isVisible = true
+                lblCacheStatus.isManaged = true
             }
         }
 
@@ -448,7 +464,7 @@ class SignageWindow(private val stage: Stage) {
                     else -> PreferencesManager.MODE_DIRECT
                 }
                 prefs.syncMode = selectedMode
-                prefs.autoStartOnBoot = chkAutoStart.isSelected
+                prefs.autoStartOnBoot = true
 
                 if (selectedMode == PreferencesManager.MODE_MQTT) {
                     prefs.mqttBrokerUrl = txtMqttBroker.text.trim()
@@ -478,7 +494,7 @@ class SignageWindow(private val stage: Stage) {
             Separator(),
             boxMqtt, boxHttp, boxDirect,
             Separator(),
-            chkAutoStart,
+            lblCacheStatus,
             buttonBar
         )
 

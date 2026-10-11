@@ -104,12 +104,19 @@ class MediaDownloader {
         val hashRaw = md5(url.trim()).take(12)
         val prefixRaw = "signage_$hashRaw"
 
-        return mediaDir.listFiles()?.firstOrNull { file ->
+        val candidate = mediaDir.listFiles()?.firstOrNull { file ->
             file.isFile &&
             !file.name.endsWith(".download") &&
-            file.length() > 0 &&
             (file.name.startsWith(prefixNormalized) || file.name.startsWith(prefixRaw))
+        } ?: return null
+
+        // Kiểm tra tính toàn vẹn: nếu file rỗng, quá nhỏ (< 1KB) hoặc hỏng thì xóa ngay để tải lại từ đầu
+        if (!candidate.exists() || candidate.length() < 1024 || !isValidVideoFile(candidate)) {
+            try { candidate.delete() } catch (_: Exception) {}
+            return null
         }
+
+        return candidate
     }
 
     fun clearAllCache(): Boolean {
@@ -232,13 +239,13 @@ class MediaDownloader {
 
             var inputStream: InputStream? = null
             var outputStream: FileOutputStream? = null
+            var bytesReadTotal: Long = 0
 
             try {
                 inputStream = body.byteStream()
                 outputStream = FileOutputStream(temp)
 
                 val buffer = ByteArray(64 * 1024)
-                var bytesReadTotal: Long = 0
                 var lastReportedProgress = -1
                 var lastReportTimeMs = 0L
                 var read: Int
@@ -275,34 +282,50 @@ class MediaDownloader {
                 activeCall = null
             }
 
-            if (temp.exists() && temp.length() > 0) {
-                if (!isValidVideoFile(temp)) {
-                    temp.delete()
-                    return@withContext Result.failure(
-                        Exception("Dữ liệu tải về không phải định dạng video hợp lệ (phản hồi HTML hoặc file hỏng)")
-                    )
-                }
+            // 1. Kiểm tra ngắt kết nối giữa chừng: nếu máy chủ khai báo Content-Length mà tải không đủ số bytes
+            if (contentLength > 0 && bytesReadTotal < contentLength) {
+                if (temp.exists()) temp.delete()
+                return@withContext Result.failure(
+                    Exception("Tải video bị ngắt giữa chừng ($bytesReadTotal / $contentLength bytes). Đã xóa dữ liệu lỗi để tải lại từ đầu.")
+                )
+            }
 
-                if (targetFile.exists()) targetFile.delete()
-                val success = temp.renameTo(targetFile)
-                if (success && targetFile.exists()) {
-                    isDownloadSuccessful = true
-                    return@withContext Result.success(targetFile)
-                } else {
-                    return@withContext Result.failure(Exception("Không thể ghi file video vào ổ đĩa"))
-                }
+            // 2. Kiểm tra dung lượng tối thiểu và tính hợp lệ của tệp video
+            if (!temp.exists() || temp.length() < 1024) {
+                if (temp.exists()) temp.delete()
+                return@withContext Result.failure(Exception("Dữ liệu tải về bị lỗi hoặc rỗng (0 bytes). Đã xóa file."))
+            }
+
+            if (!isValidVideoFile(temp)) {
+                if (temp.exists()) temp.delete()
+                return@withContext Result.failure(
+                    Exception("Dữ liệu tải về không phải định dạng video hợp lệ (phản hồi HTML hoặc file hỏng). Đã xóa file.")
+                )
+            }
+
+            // 3. Hoàn tất lưu file vào thư mục lưu trữ
+            if (targetFile.exists()) targetFile.delete()
+            val success = temp.renameTo(targetFile)
+            if (success && targetFile.exists()) {
+                isDownloadSuccessful = true
+                return@withContext Result.success(targetFile)
             } else {
-                return@withContext Result.failure(Exception("Dữ liệu tải về bị rỗng (0 bytes)"))
+                if (temp.exists()) temp.delete()
+                return@withContext Result.failure(Exception("Không thể ghi file video vào ổ đĩa."))
             }
 
         } catch (e: UnknownHostException) {
-            return@withContext Result.failure(Exception("Không có kết nối Internet hoặc tên miền không tồn tại"))
+            tempFile?.let { if (it.exists()) it.delete() }
+            return@withContext Result.failure(Exception("Mất kết nối Internet (Không tìm thấy máy chủ)"))
         } catch (e: SocketTimeoutException) {
-            return@withContext Result.failure(Exception("Kết nối quá thời gian chờ (Timeout)"))
+            tempFile?.let { if (it.exists()) it.delete() }
+            return@withContext Result.failure(Exception("Mất kết nối mạng: Quá thời gian chờ tải (Timeout)"))
         } catch (e: InterruptedIOException) {
-            return@withContext Result.failure(Exception("Tạm dừng tải video do ngắt kết nối"))
+            tempFile?.let { if (it.exists()) it.delete() }
+            return@withContext Result.failure(Exception("Quá trình tải bị gián đoạn do ngắt kết nối"))
         } catch (t: Throwable) {
-            return@withContext Result.failure(Exception("Lỗi tải video: ${t.localizedMessage ?: "Không xác định"}"))
+            tempFile?.let { if (it.exists()) it.delete() }
+            return@withContext Result.failure(Exception("Lỗi tải video: ${t.localizedMessage ?: "Mất kết nối"}"))
         } finally {
             activeCall = null
             if (!isDownloadSuccessful && tempFile != null && tempFile.exists()) {

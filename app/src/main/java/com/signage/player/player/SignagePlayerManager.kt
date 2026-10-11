@@ -70,11 +70,12 @@ class SignagePlayerManager(
             }
             override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
             override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
-                // Khi bề mặt bị hủy (thoát ra ngoài), lưu ngay vị trí phát
+                // Khi bề mặt bị hủy (thoát ra ngoài / tắt màn hình), lưu ngay vị trí phát và giải phóng tham chiếu
                 try {
                     val pos = videoView.currentPosition
                     if (pos > 0) savedPosition = pos
                 } catch (_: Exception) {}
+                mediaPlayer = null
             }
         })
 
@@ -174,11 +175,14 @@ class SignagePlayerManager(
      */
     fun resume() {
         try {
-            if (currentFile != null && currentFile!!.exists()) {
+            val file = currentFile ?: lastKnownGoodFile
+            if (file != null && file.exists()) {
                 if (!videoView.isPlaying) {
                     val pos = try { videoView.currentPosition } catch (_: Exception) { 0 }
-                    if (pos <= 0 && savedPosition > 0) {
-                        val uri = Uri.fromFile(currentFile)
+                    // Nếu MediaPlayer chưa khởi tạo hoặc pos <= 0 (vừa bật TV lại), nạp lại URI để kích hoạt VideoView
+                    if (mediaPlayer == null || pos <= 0) {
+                        currentFile = file
+                        val uri = Uri.fromFile(file)
                         videoView.setVideoURI(uri)
                     } else {
                         if (savedPosition > 0) {

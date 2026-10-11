@@ -31,17 +31,14 @@ object DeviceIdentifierHelper {
             val allInterfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
 
             // Sắp xếp ưu tiên: eth0 (mạng dây), sau đó đến wlan0 (Wi-Fi)
-            val sortedList = allInterfaces.sortedWith(Comparator { o1, o2 ->
-                val name1 = o1.name.lowercase(Locale.ROOT)
-                val name2 = o2.name.lowercase(Locale.ROOT)
+            val sortedList = allInterfaces.sortedBy { nif ->
+                val name = nif.name.lowercase(Locale.ROOT)
                 when {
-                    name1.startsWith("eth") -> -1
-                    name2.startsWith("eth") -> 1
-                    name1.startsWith("wlan") -> -1
-                    name2.startsWith("wlan") -> 1
-                    else -> 0
+                    name.startsWith("eth") -> 0
+                    name.startsWith("wlan") -> 1
+                    else -> 2
                 }
-            })
+            }
 
             for (nif in sortedList) {
                 val macBytes = nif.hardwareAddress ?: continue

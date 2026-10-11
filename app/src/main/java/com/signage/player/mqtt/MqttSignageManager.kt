@@ -48,15 +48,18 @@ class MqttSignageManager(
             try {
                 val brokerUrl = prefs.mqttBrokerUrl
                 val deviceId = prefs.mqttDeviceId
+                // Chuẩn hóa Client ID an toàn theo chuẩn MQTT (loại bỏ dấu hai chấm để tương thích 100% các Broker)
+                val cleanId = deviceId.replace(":", "").replace("-", "")
+                val clientId = if (cleanId.startsWith("Signage_")) cleanId else "Signage_$cleanId"
 
-                Log.d(TAG, "Đang kết nối MQTT Broker: $brokerUrl với Device ID: $deviceId")
+                Log.d(TAG, "Đang kết nối MQTT Broker: $brokerUrl với Client ID: $clientId")
                 onStatusChanged(false, "Đang kết nối: $brokerUrl...")
 
                 // Ngắt kết nối cũ nếu có
                 disconnectSilently()
 
                 // Sử dụng MemoryPersistence siêu nhẹ, không ghi rác ra ổ đĩa
-                mqttClient = MqttAsyncClient(brokerUrl, deviceId, MemoryPersistence())
+                mqttClient = MqttAsyncClient(brokerUrl, clientId, MemoryPersistence())
 
                 val options = MqttConnectOptions().apply {
                     isAutomaticReconnect = true  // Tự động kết nối lại ngay khi có Wi-Fi
@@ -122,10 +125,17 @@ class MqttSignageManager(
         if (!client.isConnected) return
 
         val broadcastTopic = prefs.mqttTopic
-        val deviceSpecificTopic = "signage/device/${prefs.mqttDeviceId}/video"
+        val rawDeviceId = prefs.mqttDeviceId
+        val cleanDeviceId = rawDeviceId.replace(":", "").replace("-", "")
+        val deviceSpecificTopic = "signage/device/$rawDeviceId/video"
+        val altDeviceTopic = "signage/device/$cleanDeviceId/video"
 
-        val topics = arrayOf(broadcastTopic, deviceSpecificTopic)
-        val qos = intArrayOf(1, 1) // QoS 1 đảm bảo tin nhắn gửi đến ít nhất 1 lần
+        val topics = if (rawDeviceId != cleanDeviceId) {
+            arrayOf(broadcastTopic, deviceSpecificTopic, altDeviceTopic)
+        } else {
+            arrayOf(broadcastTopic, deviceSpecificTopic)
+        }
+        val qos = IntArray(topics.size) { 1 } // QoS 1 đảm bảo tin nhắn gửi đến ít nhất 1 lần
 
         try {
             client.subscribe(topics, qos, null, object : IMqttActionListener {

@@ -129,6 +129,13 @@ class PreferencesManager(private val context: Context) {
             if (id.isNullOrBlank()) {
                 id = DeviceIdentifierHelper.getMacAddress(context)
                 prefs.edit().putString(KEY_MQTT_DEVICE_ID, id).apply()
+            } else if (id.startsWith("Signage_")) {
+                // Tự động nâng cấp: Nếu trước đó lưu mã UUID tạm (do lúc cài chưa cắm mạng), cập nhật lại MAC thật
+                val realMac = DeviceIdentifierHelper.getMacAddress(context)
+                if (!realMac.startsWith("Signage_")) {
+                    id = realMac
+                    prefs.edit().putString(KEY_MQTT_DEVICE_ID, id).apply()
+                }
             }
             return id
         }

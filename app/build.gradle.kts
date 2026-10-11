@@ -11,8 +11,8 @@ android {
         applicationId = "com.signage.player"
         minSdk = 16       // Ho tro tu Android 4.1 (Jelly Bean) tro len
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.4.0"
+        versionCode = 9
+        versionName = "2.4.2"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -25,6 +25,9 @@ android {
             storePassword = "signage123456"
             keyAlias = "signage"
             keyPassword = "signage123456"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

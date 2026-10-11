@@ -21,8 +21,13 @@ class BootReceiver : BroadcastReceiver() {
         if (isBootEvent) {
             val prefs = PreferencesManager(context)
 
-            // QUAN TRỌNG: Chỉ tự mở khi máy đã có cấu hình link hoặc file video lưu sẵn
-            if (prefs.isAutoBootEnabled && prefs.mediaUrl.isNotBlank()) {
+            // QUAN TRỌNG: Tự động khởi chạy Kiosk khi có cấu hình (link video, server MQTT, REST API, hoặc video lưu sẵn)
+            val hasValidConfig = prefs.mediaUrl.isNotBlank() ||
+                    prefs.syncMode == PreferencesManager.MODE_MQTT ||
+                    prefs.syncMode == PreferencesManager.MODE_HTTP_API ||
+                    !prefs.lastCachedFilePath.isNullOrBlank()
+
+            if (prefs.isAutoBootEnabled && hasValidConfig) {
                 val launchIntent = Intent(context, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }

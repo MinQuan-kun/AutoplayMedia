@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "SmartSignagePlayer"
 include(":app")
+include(":desktop")

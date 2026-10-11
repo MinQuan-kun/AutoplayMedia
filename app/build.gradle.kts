@@ -11,8 +11,8 @@ android {
         applicationId = "com.signage.player"
         minSdk = 16       // Ho tro tu Android 4.1 (Jelly Bean) tro len
         targetSdk = 35
-        versionCode = 10
-        versionName = "2.4.3"
+        versionCode = 11
+        versionName = "2.4.4"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

@@ -41,7 +41,7 @@ class SignagePlayerManager(
         if (!isPlaying()) {
             val failedFile = currentFile
             val fallback = lastKnownGoodFile
-            val timeoutMsg = "Video nạp quá thời gian chờ (15s). Video có thể quá nặng (4K/60fps/HEVC) hoặc phần cứng/giả lập không đủ khả năng giải mã."
+            val timeoutMsg = "Video nạp quá thời gian chờ (20s). Video có thể quá nặng (4K/60fps/HEVC) hoặc phần cứng/giả lập không đủ khả năng giải mã."
             if (fallback != null && fallback.exists() && fallback.absolutePath != failedFile?.absolutePath) {
                 onError("$timeoutMsg Đang tự động phát lại video dự phòng gần nhất...")
                 playVideoFile(fallback, keepPosition = false)
@@ -82,7 +82,8 @@ class SignagePlayerManager(
         // Tự động khôi phục luồng phát khi cắm lại dây HDMI hoặc bật lại màn hình TV (SurfaceCreated)
         videoView.holder.addCallback(object : android.view.SurfaceHolder.Callback {
             override fun surfaceCreated(holder: android.view.SurfaceHolder) {
-                resume()
+                // VideoView tự động gọi openVideo() trong callback nội bộ khi có surface và mUri.
+                // Tránh gọi setVideoURI ở đây gây xung đột hai lần mở MediaPlayer cùng lúc.
             }
             override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
             override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
@@ -145,12 +146,10 @@ class SignagePlayerManager(
             // Cơ chế FALLBACK: Nếu video mới bị lỗi định dạng nhưng trong máy có video cũ chạy tốt
             if (fallback != null && fallback.exists() && fallback.absolutePath != failedFile?.absolutePath) {
                 onError("$baseMsg Đang tự động khôi phục video dự phòng gần nhất...")
-                try {
-                    failedFile?.delete()
-                } catch (_: Exception) {}
+                // Không xóa file ngay để bảo toàn dữ liệu nếu lỗi chỉ là do bộ giải mã tạm thời bận
                 playVideoFile(fallback, keepPosition = false)
             } else {
-                onError("$baseMsg Vui lòng kiểm tra định dạng video.")
+                onError("$baseMsg Thiết bị không hỗ trợ giải mã chuẩn video này (4K/60fps/HEVC/10-bit) hoặc file bị lỗi.")
             }
             true // Đã bắt lỗi an toàn, không để Android hiện popup văng app
         }
@@ -165,12 +164,13 @@ class SignagePlayerManager(
             savedPosition = 0
         }
         currentFile = file
+        file.setReadable(true, false)
         videoView.visibility = View.VISIBLE
         val uri = Uri.fromFile(file)
 
-        // Đặt đồng hồ kiểm soát 15s nếu bộ giải mã bị treo do video quá nặng
+        // Đặt đồng hồ kiểm soát 20s nếu bộ giải mã bị treo do video quá nặng
         watchdogHandler.removeCallbacks(watchdogRunnable)
-        watchdogHandler.postDelayed(watchdogRunnable, 15000L)
+        watchdogHandler.postDelayed(watchdogRunnable, 20000L)
 
         videoView.stopPlayback()
         videoView.setVideoURI(uri)
@@ -205,6 +205,7 @@ class SignagePlayerManager(
                     // Nếu MediaPlayer chưa khởi tạo hoặc pos <= 0 (vừa bật TV lại), nạp lại URI để kích hoạt VideoView
                     if (mediaPlayer == null || pos <= 0) {
                         currentFile = file
+                        file.setReadable(true, false)
                         val uri = Uri.fromFile(file)
                         videoView.setVideoURI(uri)
                     } else {

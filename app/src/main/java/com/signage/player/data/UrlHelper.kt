@@ -41,7 +41,8 @@ object UrlHelper {
      * Kiểm tra xem có phải link Google Drive không.
      */
     fun isGoogleDrive(url: String): Boolean {
-        return url.contains("drive.google.com")
+        val lower = url.lowercase(Locale.ROOT)
+        return lower.contains("drive.google.com") || lower.contains("docs.google.com") || lower.contains("drive.usercontent.google.com")
     }
 
     /**
@@ -90,11 +91,11 @@ object UrlHelper {
     fun transformToDirectDownloadUrl(url: String): String {
         var clean = url.trim()
 
-        // 1. Chuyển đổi Google Drive
+        // 1. Chuyển đổi Google Drive (Dùng cổng uc chính thức để hỗ trợ tải file lớn)
         if (isGoogleDrive(clean)) {
             val fileId = extractGoogleDriveFileId(clean)
             if (!fileId.isNullOrBlank()) {
-                return "https://drive.usercontent.google.com/download?id=$fileId&export=download&confirm=t"
+                return "https://docs.google.com/uc?export=download&id=$fileId"
             }
         }
 

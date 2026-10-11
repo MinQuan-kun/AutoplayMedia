@@ -11,6 +11,10 @@
     <!-- Auto start after TV / Phone reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Storage permissions for reading imported local videos (BlueStacks / TV Box / USB) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
     <!-- Android TV compatibility declarations -->
     <uses-feature
         android:name="android.software.leanback"

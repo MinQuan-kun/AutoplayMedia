@@ -35,6 +35,22 @@ class SignagePlayerManager(
     // Ghi nhớ khoảnh khắc chính xác (miligiây) của video để tiếp tục phát
     private var savedPosition: Int = 0
 
+    // Cơ chế Watchdog giám sát chống đơ/đứng khi nạp video quá nặng hoặc codec bị treo
+    private val watchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val watchdogRunnable = Runnable {
+        if (!isPlaying()) {
+            val failedFile = currentFile
+            val fallback = lastKnownGoodFile
+            val timeoutMsg = "Video nạp quá thời gian chờ (15s). Video có thể quá nặng (4K/60fps/HEVC) hoặc phần cứng/giả lập không đủ khả năng giải mã."
+            if (fallback != null && fallback.exists() && fallback.absolutePath != failedFile?.absolutePath) {
+                onError("$timeoutMsg Đang tự động phát lại video dự phòng gần nhất...")
+                playVideoFile(fallback, keepPosition = false)
+            } else {
+                onError(timeoutMsg)
+            }
+        }
+    }
+
     fun getCurrentPosition(): Int {
         return try {
             val pos = videoView.currentPosition
@@ -80,6 +96,7 @@ class SignagePlayerManager(
         })
 
         videoView.setOnPreparedListener { mp ->
+            watchdogHandler.removeCallbacks(watchdogRunnable)
             mediaPlayer = mp
             mp.isLooping = true // Lặp vô tận 24/7
 
@@ -116,6 +133,7 @@ class SignagePlayerManager(
         }
 
         videoView.setOnErrorListener { _, what, extra ->
+            watchdogHandler.removeCallbacks(watchdogRunnable)
             val failedFile = currentFile
             val fallback = lastKnownGoodFile
 
@@ -149,6 +167,11 @@ class SignagePlayerManager(
         currentFile = file
         videoView.visibility = View.VISIBLE
         val uri = Uri.fromFile(file)
+
+        // Đặt đồng hồ kiểm soát 15s nếu bộ giải mã bị treo do video quá nặng
+        watchdogHandler.removeCallbacks(watchdogRunnable)
+        watchdogHandler.postDelayed(watchdogRunnable, 15000L)
+
         videoView.stopPlayback()
         videoView.setVideoURI(uri)
     }
@@ -201,6 +224,7 @@ class SignagePlayerManager(
      * Giải phóng tài nguyên phần cứng.
      */
     fun release() {
+        watchdogHandler.removeCallbacks(watchdogRunnable)
         try {
             videoView.stopPlayback()
         } catch (e: Exception) {

@@ -26,6 +26,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -96,13 +97,21 @@ class MainActivity : AppCompatActivity() {
             onError = { errorMessage ->
                 runOnUiThread {
                     Log.w("MainActivity", errorMessage)
+                    binding.downloadOverlay.visibility = View.VISIBLE
+                    binding.progressBar.visibility = View.GONE
+                    binding.layoutOverlayActions.visibility = View.VISIBLE
+                    binding.tvStatus.text = "Không thể phát video"
+                    binding.tvDownloadPercent.text = errorMessage
+                    Toast.makeText(this@MainActivity, errorMessage, Toast.LENGTH_LONG).show()
                 }
             }
         ).apply {
             onVideoPlayStarted = { playingFile ->
                 // Video mới đã thực sự giải mã thành công và đang phát trên màn hình!
-                // Lúc này mới an tâm dọn dẹp các video cũ trước đó để giải phóng bộ nhớ!
-                downloader.purgeOldVideosExcept(playingFile)
+                // Dọn dẹp video cũ trong background IO để không gây giật lag luồng UI chính
+                lifecycleScope.launch(Dispatchers.IO) {
+                    downloader.purgeOldVideosExcept(playingFile)
+                }
                 prefs.lastCachedFilePath = playingFile.absolutePath
                 binding.downloadOverlay.visibility = View.GONE
                 binding.tvOfflineBadge.visibility = View.GONE
@@ -322,6 +331,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // 0. Hỗ trợ đường dẫn file nội bộ trong máy (nếu chạy giả lập PC / cắm USB)
+        if (currentUrl.startsWith("/") || currentUrl.startsWith("file://")) {
+            val cleanPath = if (currentUrl.startsWith("file://")) currentUrl.removePrefix("file://") else currentUrl
+            val localFile = java.io.File(cleanPath)
+            if (localFile.exists() && localFile.length() > 0) {
+                binding.downloadOverlay.visibility = View.GONE
+                binding.tvOfflineBadge.visibility = View.VISIBLE
+                prefs.lastCachedFilePath = localFile.absolutePath
+                val savedPos = prefs.lastPlaybackPosition
+                if (savedPos > 0) {
+                    playerManager.restorePlaybackPosition(savedPos)
+                }
+                playerManager.playVideoFile(localFile, keepPosition = true)
+                return
+            }
+        }
+
         // 1. Kiểm tra xem file video đã có sẵn và nguyên vẹn trong máy chưa
         val cachedFile = downloader.getCachedFileForUrl(currentUrl)
         if (cachedFile != null && cachedFile.exists() && cachedFile.length() > 0) {
@@ -351,6 +377,23 @@ class MainActivity : AppCompatActivity() {
      * - Mất mạng: tạm ngừng tải, video cũ vẫn chạy bình thường, không bị xóa.
      */
     private fun startDownloadAndPlay(url: String, retryCount: Int = 0, keepOverlayHidden: Boolean = false) {
+        // Hỗ trợ nạp trực tiếp file trong máy (nếu là đường dẫn cục bộ trên giả lập / TV Box)
+        if (url.startsWith("/") || url.startsWith("file://")) {
+            val cleanPath = if (url.startsWith("file://")) url.removePrefix("file://") else url
+            val localFile = java.io.File(cleanPath)
+            if (localFile.exists() && localFile.length() > 0) {
+                binding.downloadOverlay.visibility = View.GONE
+                binding.tvOfflineBadge.visibility = View.VISIBLE
+                prefs.lastCachedFilePath = localFile.absolutePath
+                prefs.lastPlaybackPosition = 0
+                playerManager.playVideoFile(localFile, keepPosition = false)
+                return
+            } else {
+                Toast.makeText(this, "Không tìm thấy file video trong máy: $cleanPath", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+
         // 0. KIỂM TRA BỘ NHỚ ĐỆM TRƯỚC TIÊN:
         // Nếu video của link này đã tải hoàn chỉnh trong máy thì phát ngay, tuyệt đối không tải lại!
         val cachedFile = downloader.getCachedFileForUrl(url)
@@ -578,13 +621,23 @@ class MainActivity : AppCompatActivity() {
                 }
                 PreferencesManager.MODE_DIRECT -> {
                     val directUrl = dBinding.etDirectVideoUrl.text.toString().trim()
-                    if (directUrl.isBlank() || (!directUrl.startsWith("http://") && !directUrl.startsWith("https://"))) {
-                        Toast.makeText(this, "Vui lòng nhập đường dẫn video hợp lệ!", Toast.LENGTH_SHORT).show()
+                    val isHttp = directUrl.startsWith("http://") || directUrl.startsWith("https://")
+                    val isLocal = directUrl.startsWith("/") || directUrl.startsWith("file://")
+                    if (directUrl.isBlank() || (!isHttp && !isLocal)) {
+                        Toast.makeText(this, "Vui lòng nhập link HTTP/HTTPS hoặc đường dẫn file trong máy!", Toast.LENGTH_SHORT).show()
                         return@setOnClickListener
                     }
                     if (UrlHelper.isImage(directUrl) || UrlHelper.isYouTube(directUrl)) {
                         Toast.makeText(this, "Chỉ hỗ trợ video, không dùng ảnh hoặc YouTube!", Toast.LENGTH_SHORT).show()
                         return@setOnClickListener
+                    }
+                    if (isLocal) {
+                        val cleanPath = if (directUrl.startsWith("file://")) directUrl.removePrefix("file://") else directUrl
+                        val localFile = java.io.File(cleanPath)
+                        if (!localFile.exists() || localFile.length() <= 0L) {
+                            Toast.makeText(this, "Không tìm thấy file video trong máy: $cleanPath", Toast.LENGTH_LONG).show()
+                            return@setOnClickListener
+                        }
                     }
                     prefs.mediaUrl = directUrl
                     val cached = downloader.getCachedFileForUrl(directUrl)

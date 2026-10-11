@@ -61,3 +61,10 @@ google-services.json
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Windows Desktop distribution packages
+SmartSignage-Windows/
+*.zip
+*.exe
+*.o
+*.ico

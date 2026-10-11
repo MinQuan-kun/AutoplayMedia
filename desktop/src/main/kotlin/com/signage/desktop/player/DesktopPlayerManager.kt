@@ -1,8 +1,9 @@
 package com.signage.desktop.player
 
 import javafx.application.Platform
-import javafx.beans.binding.Bindings
+import javafx.geometry.Pos
 import javafx.scene.layout.Pane
+import javafx.scene.layout.StackPane
 import javafx.scene.media.Media
 import javafx.scene.media.MediaPlayer
 import javafx.scene.media.MediaView
@@ -43,12 +44,9 @@ class DesktopPlayerManager(
         mediaView.fitHeightProperty().bind(containerPane.heightProperty())
         mediaView.isPreserveRatio = true
 
-        // Căn giữa video trong khung chứa
-        val layoutBinding = Bindings.createDoubleBinding(
-            { (containerPane.width - mediaView.layoutBounds.width) / 2.0 },
-            containerPane.widthProperty(), mediaView.layoutBoundsProperty()
-        )
-        mediaView.xProperty().bind(layoutBinding)
+        if (containerPane is StackPane) {
+            StackPane.setAlignment(mediaView, Pos.CENTER)
+        }
 
         containerPane.children.add(0, mediaView)
     }

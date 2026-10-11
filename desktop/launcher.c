@@ -49,8 +49,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Xây dựng câu lệnh thực thi JVM
     char cmdLine[8192];
     snprintf(cmdLine, sizeof(cmdLine),
-        "\"%s\" --add-modules javafx.controls,javafx.media -Dfile.encoding=UTF-8 -classpath \"%slib\\*\" com.signage.desktop.MainApplicationKt %s",
-        javaExe, exePath, lpCmdLine);
+        "\"%s\" --module-path \"%slib\" --add-modules javafx.controls,javafx.media -Dfile.encoding=UTF-8 -classpath \"%slib\\*\" com.signage.desktop.MainApplicationKt %s",
+        javaExe, exePath, exePath, lpCmdLine);
 
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -58,7 +58,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE, 0, NULL, exePath, &si, &pi)) {
+    if (!CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE, CREATE_NEW_PROCESS_GROUP, NULL, exePath, &si, &pi)) {
         char msg[1024];
         snprintf(msg, sizeof(msg),
             "Không thể khởi động Smart Signage Player!\n\n"

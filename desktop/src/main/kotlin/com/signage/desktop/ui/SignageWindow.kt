@@ -37,7 +37,7 @@ class SignageWindow(private val stage: Stage) {
     private val downloader = MediaDownloader()
 
     private val rootPane = StackPane()
-    private val videoContainer = Pane()
+    private val videoContainer = StackPane()
     private val overlayPane = VBox(15.0)
 
     private val progressBar = ProgressBar(0.0)
@@ -117,9 +117,10 @@ class SignageWindow(private val stage: Stage) {
         val scene = Scene(rootPane, 1280.0, 720.0, Color.BLACK)
         stage.scene = scene
         stage.title = "Smart Signage Player"
-        stage.isFullScreen = true
         stage.fullScreenExitHint = ""
         stage.show()
+        stage.isFullScreen = true
+        stage.toFront()
     }
 
     private fun setupPlayerAndServer() {
@@ -325,18 +326,32 @@ class SignageWindow(private val stage: Stage) {
     }
 
     private fun updateAutoStartRegistration() {
-        val currentJarOrExe = System.getProperty("java.class.path")
-        val javaExe = System.getProperty("java.home") + File.separator + "bin" + File.separator + "javaw.exe"
-        val cmd = "\"$javaExe\" -jar \"$currentJarOrExe\""
+        val exeInDir = File(System.getProperty("user.dir"), "SmartSignage.exe")
+        val cmd = if (exeInDir.exists()) {
+            "\"${exeInDir.absolutePath}\""
+        } else {
+            val javaHome = System.getProperty("java.home")
+            val javaw = File(javaHome, "bin/javaw.exe").takeIf { it.exists() }?.absolutePath
+                ?: File(javaHome, "bin/java.exe").absolutePath
+            val appDir = File(System.getProperty("user.dir"))
+            val libDir = File(appDir, "lib")
+            if (libDir.exists()) {
+                "\"$javaw\" --module-path \"${libDir.absolutePath}\" --add-modules javafx.controls,javafx.media -classpath \"${libDir.absolutePath}\\*\" com.signage.desktop.MainApplicationKt"
+            } else {
+                val currentJarOrExe = System.getProperty("java.class.path")
+                "\"$javaw\" -jar \"$currentJarOrExe\""
+            }
+        }
         WindowsAutoStartHelper.setAutoStart(prefs.autoStartOnBoot, cmd)
     }
 
     private fun showSettingsDialog() {
-        val dialog = Stage(StageStyle.UTILITY).apply {
+        val dialog = Stage().apply {
             initOwner(stage)
             initModality(Modality.APPLICATION_MODAL)
             title = "Cấu hình Smart Signage (Windows Desktop)"
             isResizable = false
+            isAlwaysOnTop = true
         }
 
         val content = VBox(14.0).apply {
